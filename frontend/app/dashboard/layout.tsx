@@ -14,6 +14,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, signOut, isLoading } = useAuthStore();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, isLoading, router]);
+
   const handleLogout = async () => {
     setIsLoggingOut(true);
     await signOut();

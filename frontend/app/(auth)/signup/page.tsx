@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/client';
+import { useAuthStore } from '@/stores/auth-store';
 
 const signupSchema = z.object({
   email: z.string().email({ message: 'Please enter a valid email address.' }),
@@ -28,6 +29,13 @@ export default function SignupPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const { user, isLoading: authLoading } = useAuthStore();
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.push('/dashboard');
+    }
+  }, [user, authLoading, router]);
   
   const form = useForm<z.infer<typeof signupSchema>>({
     resolver: zodResolver(signupSchema),
