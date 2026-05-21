@@ -1,0 +1,170 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Shield, Loader2, Eye, EyeOff } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { createClient } from '@/lib/supabase/client';
+import { useAuthStore } from '@/stores/auth-store';
+
+const loginSchema = z.object({
+  email: z.string().email({ message: 'Please enter a valid email address.' }),
+  password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
+});
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const initializeAuth = useAuthStore((state) => state.initialize);
+  
+  const form = useForm<z.infer<typeof loginSchema>>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+  });
+
+  async function onSubmit(values: z.infer<typeof loginSchema>) {
+    setIsLoading(true);
+    const supabase = createClient();
+    
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: values.email,
+        password: values.password,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      await initializeAuth();
+      toast.success('Successfully logged in');
+      router.push('/dashboard');
+      router.refresh();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to login. Please check your credentials.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-background relative overflow-hidden">
+      {/* Background elements */}
+      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-purple-600/10 rounded-full blur-[120px] pointer-events-none" />
+      
+      <div className="w-full max-w-md z-10">
+        <div className="flex flex-col items-center mb-8">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="p-2 bg-blue-500/10 rounded-xl group-hover:bg-blue-500/20 transition-colors">
+              <Shield className="w-8 h-8 text-blue-500" />
+            </div>
+            <span className="font-bold text-2xl tracking-tight">PhishGuard</span>
+          </Link>
+        </div>
+
+        <Card className="border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl">
+          <CardHeader className="space-y-1 text-center pb-6">
+            <CardTitle className="text-2xl font-semibold tracking-tight">Welcome back</CardTitle>
+            <CardDescription className="text-muted-foreground">
+              Enter your email and password to sign in
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="name@example.com" 
+                          type="email" 
+                          autoComplete="email"
+                          className="bg-background/50 border-white/10 focus-visible:ring-blue-500/50" 
+                          {...field} 
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel>Password</FormLabel>
+                        {/* <Link href="/forgot-password" className="text-xs text-blue-400 hover:text-blue-300">
+                          Forgot password?
+                        </Link> */}
+                      </div>
+                      <FormControl>
+                        <div className="relative">
+                          <Input 
+                            type={showPassword ? "text" : "password"}
+                            autoComplete="current-password"
+                            placeholder="••••••••"
+                            className="bg-background/50 border-white/10 focus-visible:ring-blue-500/50 pr-10"
+                            {...field}
+                          />
+                          <button
+                            type="button"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button 
+                  type="submit" 
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white mt-6" 
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    'Sign In'
+                  )}
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
+          <CardFooter className="flex flex-col gap-4 text-center border-t border-white/10 pt-6">
+            <div className="text-sm text-muted-foreground">
+              Don't have an account?{' '}
+              <Link href="/signup" className="text-blue-400 hover:text-blue-300 font-medium">
+                Sign up
+              </Link>
+            </div>
+          </CardFooter>
+        </Card>
+      </div>
+    </div>
+  );
+}
