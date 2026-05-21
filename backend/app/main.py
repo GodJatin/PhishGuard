@@ -27,3 +27,8 @@ app.include_router(scan.router, prefix=f"{settings.API_V1_STR}/scan", tags=["sca
 app.include_router(history.router, prefix=f"{settings.API_V1_STR}/history", tags=["history"])
 app.include_router(reports.router, prefix=f"{settings.API_V1_STR}/reports", tags=["reports"])
 
+@app.get("/")
+def health_root():
+    return {"status": "healthy"}
+
+
