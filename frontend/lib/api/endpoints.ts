@@ -10,5 +10,11 @@ export const API_ENDPOINTS = {
   },
   HISTORY: {
     GET_ALL: '/history',
+  },
+  ANALYTICS: {
+    OVERVIEW: '/analytics/overview',
+    TRENDS: '/analytics/trends',
+    KEYWORDS: '/analytics/keywords',
+    RECENT_THREATS: '/analytics/recent-threats',
   }
 };
