@@ -181,7 +181,7 @@ export default function DashboardPage() {
   }, [loadingStageIdx, currentStages]);
 
   // React Query Caching for analytics data
-  const { data: overview, isLoading: isOverviewLoading } = useQuery<OverviewStats>({
+  const { data: overview, isLoading: isOverviewLoading, isError: isOverviewError } = useQuery<OverviewStats>({
     queryKey: ['analytics-overview'],
     queryFn: async () => {
       const supabase = createClient();
@@ -194,7 +194,7 @@ export default function DashboardPage() {
     enabled: !isGuest
   });
 
-  const { data: trends, isLoading: isTrendsLoading } = useQuery<TrendItem[]>({
+  const { data: trends, isLoading: isTrendsLoading, isError: isTrendsError } = useQuery<TrendItem[]>({
     queryKey: ['analytics-trends'],
     queryFn: async () => {
       const supabase = createClient();
@@ -207,7 +207,7 @@ export default function DashboardPage() {
     enabled: !isGuest
   });
 
-  const { data: keywords, isLoading: isKeywordsLoading } = useQuery<KeywordStats>({
+  const { data: keywords, isLoading: isKeywordsLoading, isError: isKeywordsError } = useQuery<KeywordStats>({
     queryKey: ['analytics-keywords'],
     queryFn: async () => {
       const supabase = createClient();
@@ -220,7 +220,7 @@ export default function DashboardPage() {
     enabled: !isGuest
   });
 
-  const { data: recentThreats, isLoading: isRecentThreatsLoading } = useQuery<RecentThreat[]>({
+  const { data: recentThreats, isLoading: isRecentThreatsLoading, isError: isRecentThreatsError } = useQuery<RecentThreat[]>({
     queryKey: ['analytics-recent-threats'],
     queryFn: async () => {
       const supabase = createClient();
@@ -232,6 +232,8 @@ export default function DashboardPage() {
     },
     enabled: !isGuest
   });
+
+  const hasConnectionError = !isGuest && (isOverviewError || isTrendsError || isKeywordsError || isRecentThreatsError);
 
   const scanMutation = useMutation({
     mutationFn: async (targetUrl: string) => {
@@ -440,6 +442,19 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {hasConnectionError && (
+        <div className="p-4 border border-red-500/30 bg-red-500/10 text-red-400 rounded-lg flex items-start gap-3 animate-in fade-in duration-300">
+          <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-red-500 animate-pulse" />
+          <div className="space-y-1">
+            <h4 className="text-sm font-semibold">Threat Intelligence API Connection Failure</h4>
+            <p className="text-xs text-red-400/80">
+              The Security Operations Center could not connect to the backend threat intelligence servers.
+              Please verify that the backend API service is running locally at <code className="bg-red-500/20 px-1 rounded font-mono">http://127.0.0.1:8000</code>.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* QUICK SCAN CONSOLE */}
       <Card className="border-white/10 bg-black/40 backdrop-blur-xl relative overflow-hidden group shadow-[0_0_30px_rgba(0,0,0,0.5)]">
         <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-500"></div>
@@ -529,8 +544,20 @@ export default function DashboardPage() {
 
       {/* STAT CARDS SECTION */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {isOverviewActiveLoading || !activeOverview ? (
+        {isOverviewActiveLoading || (!activeOverview && !hasConnectionError) ? (
           Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)
+        ) : (hasConnectionError || !activeOverview) ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i} className="border-red-500/15 bg-red-950/10 backdrop-blur-xl">
+              <CardHeader className="pb-2">
+                <CardDescription className="text-[10px] text-red-500/60 font-mono tracking-wider font-bold">OFFLINE</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-xl font-bold font-mono text-red-400/80">N/A</div>
+                <div className="text-[9px] text-red-400/40 mt-1">API Unreachable</div>
+              </CardContent>
+            </Card>
+          ))
         ) : (
           <>
             {/* Total Scans */}
@@ -642,6 +669,21 @@ export default function DashboardPage() {
             <div className="lg:col-span-2">
               {isTrendsLoading || !mounted ? (
                 <ChartSkeleton />
+              ) : hasConnectionError ? (
+                <Card className="border-red-500/15 bg-red-950/5 backdrop-blur-xl h-[360px]">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2 text-red-400">
+                      <TrendingUp className="w-4 h-4" /> Scan Activity Timeline
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-[270px] flex flex-col items-center justify-center text-center p-6 border border-dashed border-red-500/20 rounded-xl bg-red-950/5">
+                    <AlertTriangle className="w-8 h-8 text-red-500/60 mb-2 animate-pulse" />
+                    <h4 className="text-xs font-semibold text-red-400">Activity Timeline Offline</h4>
+                    <p className="text-[11px] text-red-400/60 max-w-[280px] mt-1">
+                      Connection to the database endpoint failed. Timeline metrics are unavailable.
+                    </p>
+                  </CardContent>
+                </Card>
               ) : trends && trends.length > 0 && overview && overview.total_scans > 0 ? (
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
                   <CardHeader className="pb-2">
@@ -692,6 +734,21 @@ export default function DashboardPage() {
             <div>
               {isOverviewLoading || !mounted ? (
                 <ChartSkeleton />
+              ) : hasConnectionError ? (
+                <Card className="border-red-500/15 bg-red-950/5 backdrop-blur-xl h-[360px]">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2 text-red-400">
+                      <PieIcon className="w-4 h-4" /> Threat Distribution
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-[270px] flex flex-col items-center justify-center text-center p-6 border border-dashed border-red-500/20 rounded-xl bg-red-950/5">
+                    <AlertTriangle className="w-8 h-8 text-red-500/60 mb-2 animate-pulse" />
+                    <h4 className="text-xs font-semibold text-red-400">Distribution Offline</h4>
+                    <p className="text-[11px] text-red-400/60 max-w-[200px] mt-1">
+                      Data payload is unavailable.
+                    </p>
+                  </CardContent>
+                </Card>
               ) : overview && overview.total_scans > 0 ? (
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px] flex flex-col">
                   <CardHeader className="pb-0">
@@ -758,10 +815,26 @@ export default function DashboardPage() {
             
             {/* Insights Panel */}
             <div className="lg:col-span-2">
-              {isOverviewLoading || !overview ? (
+              {isOverviewLoading || (!overview && !hasConnectionError) ? (
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] animate-pulse">
                   <CardHeader><div className="h-5 w-48 bg-white/10 rounded" /></CardHeader>
                   <CardContent className="space-y-4"><div className="h-20 bg-white/5 rounded" /><div className="h-20 bg-white/5 rounded" /></CardContent>
+                </Card>
+              ) : (hasConnectionError || !overview) ? (
+                <Card className="border-red-500/15 bg-red-950/5 backdrop-blur-xl h-[330px] flex flex-col justify-between">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2 text-red-400">
+                      <Brain className="w-4 h-4" />
+                      Threat Intelligence Insights
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-red-500/20 rounded-xl bg-red-950/5">
+                    <AlertTriangle className="w-8 h-8 text-red-500/60 mb-2 animate-pulse" />
+                    <h4 className="text-xs font-semibold text-red-400">Insights Offline</h4>
+                    <p className="text-[11px] text-red-400/60 max-w-[240px] mt-1">
+                      Unable to compute threat insights.
+                    </p>
+                  </CardContent>
                 </Card>
               ) : (
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
@@ -833,6 +906,21 @@ export default function DashboardPage() {
             <div>
               {isOverviewLoading || !mounted ? (
                 <ChartSkeleton />
+              ) : hasConnectionError ? (
+                <Card className="border-red-500/15 bg-red-950/5 backdrop-blur-xl h-[330px]">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2 text-red-400">
+                      <BarChart3 className="w-4 h-4" /> Engine Utilisation
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-[240px] flex flex-col items-center justify-center text-center p-6 border border-dashed border-red-500/20 rounded-xl bg-red-950/5">
+                    <AlertTriangle className="w-8 h-8 text-red-500/60 mb-2 animate-pulse" />
+                    <h4 className="text-xs font-semibold text-red-400">Engine Utilisation Offline</h4>
+                    <p className="text-[11px] text-red-400/60 max-w-[200px] mt-1">
+                      Engine comparison index offline.
+                    </p>
+                  </CardContent>
+                </Card>
               ) : overview && overview.total_scans > 0 ? (
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
                   <CardHeader className="pb-0">

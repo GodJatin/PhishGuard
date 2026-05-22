@@ -1,11 +1,15 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Shield, Lock, Activity, ArrowRight } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
+import { useAuthStore } from '@/stores/auth-store';
 
 export default function Home() {
+  const router = useRouter();
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden flex flex-col">
       {/* Navbar */}
@@ -63,6 +67,15 @@ export default function Home() {
             <Link href="/login" className={buttonVariants({ variant: "outline", size: "lg", className: "w-full sm:w-auto h-12 px-8 text-base border-white/10 hover:bg-white/5" })}>
               Access Dashboard
             </Link>
+            <button 
+              onClick={() => {
+                useAuthStore.getState().setGuest(true);
+                router.push('/dashboard');
+              }}
+              className={buttonVariants({ variant: "ghost", size: "lg", className: "w-full sm:w-auto h-12 px-8 text-base text-muted-foreground hover:text-foreground hover:bg-white/5 active:scale-95 border border-dashed border-white/10 hover:border-white/20 transition-all cursor-pointer" })}
+            >
+              Continue as Guest
+            </button>
           </motion.div>
         </div>
 

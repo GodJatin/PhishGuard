@@ -15,7 +15,7 @@ origins = [origin.strip() for origin in settings.FRONTEND_URL.split(",") if orig
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://(phishguard|phishguard-.*)\.vercel\.app|http://localhost(:\d+)?",
+    allow_origin_regex=r"https://(phishguard|phishguard-.*)\.vercel\.app|http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

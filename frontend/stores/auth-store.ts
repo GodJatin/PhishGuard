@@ -39,9 +39,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   signOut: async () => {
     const supabase = createClient();
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error signing out from Supabase auth service:', error);
+    }
     if (typeof window !== 'undefined') {
       localStorage.removeItem('phishguard_is_guest');
+      localStorage.removeItem('phishguard_guest_scans');
     }
     set({ user: null, session: null, isGuest: false });
   },

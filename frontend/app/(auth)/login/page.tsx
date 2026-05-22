@@ -169,22 +169,6 @@ export default function LoginPage() {
                 Sign up
               </Link>
             </div>
-            <div className="relative flex py-1 items-center w-full">
-              <div className="flex-grow border-t border-white/10"></div>
-              <span className="flex-shrink mx-4 text-muted-foreground text-xs uppercase">Or</span>
-              <div className="flex-grow border-t border-white/10"></div>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full border-white/10 hover:bg-white/5 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                useAuthStore.getState().setGuest(true);
-                router.push('/dashboard');
-              }}
-            >
-              Continue as Guest
-            </Button>
           </CardFooter>
         </Card>
       </div>

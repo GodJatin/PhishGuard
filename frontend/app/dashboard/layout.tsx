@@ -43,9 +43,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const handleLogout = async () => {
     setIsLoggingOut(true);
     setIsMobileMenuOpen(false);
-    await signOut();
-    router.push('/login');
-    router.refresh();
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Error during logout execution:', error);
+    } finally {
+      setIsLoggingOut(false);
+      window.location.href = '/login';
+    }
   };
 
   const handleInstallApp = async () => {
@@ -114,13 +119,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
             
             {isGuest && (
-              <Link 
-                href="/login" 
-                onClick={() => signOut()}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
                 className="hidden sm:inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 h-8 px-3"
               >
                 Upgrade to SaaS
-              </Link>
+              </Button>
             )}
 
             {deferredPrompt && (
@@ -211,10 +217,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        signOut();
-                        router.push('/login');
-                      }}
+                      onClick={handleLogout}
                       className="w-full border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 h-10"
                     >
                       Upgrade to SaaS
