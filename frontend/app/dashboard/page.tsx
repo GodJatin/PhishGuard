@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { createClient } from '@/lib/supabase';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -24,6 +25,7 @@ const loadingStages = [
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const userName = user?.email?.split('@')[0] || 'User';
+  const router = useRouter();
   
   const [url, setUrl] = useState('');
   const [scanType, setScanType] = useState('rule-based');
@@ -48,8 +50,16 @@ export default function DashboardPage() {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
+      const apiURL = process.env.NEXT_PUBLIC_API_URL;
+      const endpoint = API_ENDPOINTS.SCAN.RULE_BASED;
+      console.log('--- STARTING SCAN REQUEST ---');
+      console.log('Target URL:', targetUrl);
+      console.log('Computed API URL:', `${apiURL || 'http://localhost:8000/api/v1'}${endpoint}`);
+      console.log('Payload:', { url: targetUrl });
+      console.log('Session exists:', !!session);
+      
       const response = await axios.post(
-        API_ENDPOINTS.SCAN.RULE_BASED, 
+        endpoint, 
         { url: targetUrl },
         {
           headers: {
@@ -57,23 +67,49 @@ export default function DashboardPage() {
           }
         }
       );
+      
+      console.log('API Response Status:', response.status);
+      console.log('API Response Body:', response.data);
       return response.data as ScanResult;
     },
     onMutate: () => {
+      console.log('Scan mutation started: resetting states.');
       setLoadingStageIdx(0);
       setScanResult(null);
     },
     onSuccess: (data) => {
+      console.log('Scan mutation succeeded with data:', data);
+      if (!data || typeof data !== 'object' || !data.scan_id) {
+        console.error('API succeeded but returned invalid/empty data:', data);
+        toast.error('API returned an invalid response format.');
+        return;
+      }
       setScanResult(data);
       queryClient.invalidateQueries({ queryKey: ['history'] });
       toast.success('Scan complete');
+      
+      // Redirect to detailed report page
+      router.push(`/scan/${data.scan_id}`);
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to scan URL');
+      console.error('Scan mutation failed. Error details:');
+      console.error('Error object:', error);
+      if (error.response) {
+        console.error('Response Status:', error.response.status);
+        console.error('Response Data:', error.response.data);
+        toast.error(error.response.data?.detail || `Error ${error.response.status}: Failed to scan URL`);
+      } else if (error.request) {
+        console.error('No response received from request:', error.request);
+        toast.error('No response from scanning server. Please verify your connection.');
+      } else {
+        console.error('General Error Message:', error.message);
+        toast.error(error.message || 'An error occurred during URL scanning');
+      }
     }
   });
 
-  const handleScan = () => {
+  const handleScan = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
     if (!url) {
       toast.error("Please enter a URL to scan");
       return;
@@ -148,6 +184,7 @@ export default function DashboardPage() {
             </div>
             
             <Button 
+              type="button"
               className="w-full h-12 bg-blue-600 hover:bg-blue-700 font-semibold text-white" 
               onClick={handleScan}
               disabled={scanMutation.isPending}
