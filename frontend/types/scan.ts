@@ -14,6 +14,24 @@ export interface TechnicalDetails {
   path_depth?: number;
   query_parameter_count?: number;
   entropy_score?: number;
+  scoring_breakdown?: Array<{ rule: string; points: number }>;
+  rule_based_result?: {
+    score: number;
+    status: string;
+    reasons: string[];
+  };
+  ml_result?: {
+    score: number;
+    status: string;
+    reasons: string[];
+    confidence?: number;
+  };
+  shared_indicators?: string[];
+  unique_findings?: {
+    rule_based: string[];
+    ml: string[];
+  };
+  score_difference?: number;
 }
 
 export interface ScanResult {

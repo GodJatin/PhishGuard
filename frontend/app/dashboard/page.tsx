@@ -125,8 +125,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+const comparisonLoadingStages = [
+  "Initializing dual-core threat scan...",
+  "Querying heuristics & ML models...",
+  "Correlating models and risk alignment...",
+  "Generating comparative threat intelligence..."
+];
+
 export default function DashboardPage() {
-  const { user } = useAuthStore();
+  const { user, isGuest } = useAuthStore();
   const userName = user?.email?.split('@')[0] || 'User';
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -136,13 +143,31 @@ export default function DashboardPage() {
   const [scanType, setScanType] = useState('rule-based');
   const [loadingStageIdx, setLoadingStageIdx] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [guestHistory, setGuestHistory] = useState<ScanResult[]>([]);
 
-  const currentStages = scanType === 'pretrained' ? mlLoadingStages : loadingStages;
+  const currentStages = 
+    scanType === 'pretrained' ? mlLoadingStages : 
+    scanType === 'comparison' ? comparisonLoadingStages : 
+    loadingStages;
 
   // Prevent SSR/hydration issues with Recharts
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Fetch guest history from localStorage
+  useEffect(() => {
+    if (isGuest && typeof window !== 'undefined') {
+      const stored = localStorage.getItem('phishguard_guest_scans');
+      if (stored) {
+        try {
+          setGuestHistory(JSON.parse(stored));
+        } catch (e) {
+          console.error('Failed to parse guest scans', e);
+        }
+      }
+    }
+  }, [isGuest]);
 
   // Progress fake loading stages
   useEffect(() => {
@@ -165,7 +190,8 @@ export default function DashboardPage() {
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       return response.data;
-    }
+    },
+    enabled: !isGuest
   });
 
   const { data: trends, isLoading: isTrendsLoading } = useQuery<TrendItem[]>({
@@ -177,7 +203,8 @@ export default function DashboardPage() {
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       return response.data;
-    }
+    },
+    enabled: !isGuest
   });
 
   const { data: keywords, isLoading: isKeywordsLoading } = useQuery<KeywordStats>({
@@ -189,7 +216,8 @@ export default function DashboardPage() {
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       return response.data;
-    }
+    },
+    enabled: !isGuest
   });
 
   const { data: recentThreats, isLoading: isRecentThreatsLoading } = useQuery<RecentThreat[]>({
@@ -201,23 +229,31 @@ export default function DashboardPage() {
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       return response.data;
-    }
+    },
+    enabled: !isGuest
   });
 
   const scanMutation = useMutation({
     mutationFn: async (targetUrl: string) => {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      const endpoint = scanType === 'pretrained' ? API_ENDPOINTS.SCAN.ML : API_ENDPOINTS.SCAN.RULE_BASED;
+      
+      let endpoint = API_ENDPOINTS.SCAN.RULE_BASED;
+      if (scanType === 'pretrained') {
+        endpoint = API_ENDPOINTS.SCAN.ML;
+      } else if (scanType === 'comparison') {
+        endpoint = API_ENDPOINTS.SCAN.COMPARISON;
+      }
+      
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
       
       const response = await axios.post(
         endpoint, 
         { url: targetUrl },
-        {
-          headers: {
-            Authorization: `Bearer ${session?.access_token}`
-          }
-        }
+        { headers }
       );
       return response.data as ScanResult;
     },
@@ -229,15 +265,40 @@ export default function DashboardPage() {
         toast.error('API returned an invalid response format.');
         return;
       }
-      // Invalidate all query caches to trigger dashboard updates immediately
-      queryClient.invalidateQueries({ queryKey: ['history'] });
-      queryClient.invalidateQueries({ queryKey: ['analytics-overview'] });
-      queryClient.invalidateQueries({ queryKey: ['analytics-trends'] });
-      queryClient.invalidateQueries({ queryKey: ['analytics-keywords'] });
-      queryClient.invalidateQueries({ queryKey: ['analytics-recent-threats'] });
       
-      toast.success('Scan complete');
-      router.push(`/scan/${data.scan_id}`);
+      if (isGuest) {
+        let scans: ScanResult[] = [];
+        if (typeof window !== 'undefined') {
+          const stored = localStorage.getItem('phishguard_guest_scans');
+          if (stored) {
+            try {
+              scans = JSON.parse(stored);
+            } catch (e) {
+              scans = [];
+            }
+          }
+          // Add new scan to beginning
+          scans = [data, ...scans];
+          // Trim to max 10 entries
+          if (scans.length > 10) {
+            scans = scans.slice(0, 10);
+          }
+          localStorage.setItem('phishguard_guest_scans', JSON.stringify(scans));
+        }
+        
+        toast.success('Scan complete (saved locally)');
+        router.push(`/scan/${data.scan_id}?guest=true`);
+      } else {
+        // Invalidate all query caches to trigger dashboard updates immediately
+        queryClient.invalidateQueries({ queryKey: ['history'] });
+        queryClient.invalidateQueries({ queryKey: ['analytics-overview'] });
+        queryClient.invalidateQueries({ queryKey: ['analytics-trends'] });
+        queryClient.invalidateQueries({ queryKey: ['analytics-keywords'] });
+        queryClient.invalidateQueries({ queryKey: ['analytics-recent-threats'] });
+        
+        toast.success('Scan complete');
+        router.push(`/scan/${data.scan_id}`);
+      }
     },
     onError: (error: any) => {
       if (error.response) {
@@ -297,6 +358,42 @@ export default function DashboardPage() {
     </Card>
   );
 
+  // Compute guest stats on the fly
+  const computedOverview = isGuest ? {
+    total_scans: guestHistory.length,
+    safe_count: guestHistory.filter(s => s.status === 'SAFE').length,
+    suspicious_count: guestHistory.filter(s => s.status === 'SUSPICIOUS').length,
+    dangerous_count: guestHistory.filter(s => s.status === 'DANGEROUS').length,
+    ml_scan_count: guestHistory.filter(s => s.scan_type === 'ml' || s.scan_type === 'comparison').length,
+    rule_based_count: guestHistory.filter(s => s.scan_type === 'rule-based' || s.scan_type === 'comparison').length,
+    average_threat_score: guestHistory.length ? Math.round(guestHistory.reduce((acc, curr) => acc + curr.score, 0) / guestHistory.length) : 0,
+    highest_threat_score: guestHistory.length ? Math.max(...guestHistory.map(s => s.score)) : 0,
+    latest_scan_timestamp: guestHistory.length ? guestHistory[0].timestamp : null,
+    total_ml_percentage: guestHistory.length ? Math.round((guestHistory.filter(s => s.scan_type === 'ml' || s.scan_type === 'comparison').length / guestHistory.length) * 100) : 0,
+    total_rule_based_percentage: guestHistory.length ? Math.round((guestHistory.filter(s => s.scan_type === 'rule-based' || s.scan_type === 'comparison').length / guestHistory.length) * 100) : 0,
+    insights: {
+      most_common_keyword: 'None',
+      most_detected_pattern: 'N/A',
+      highest_threat_score: guestHistory.length ? Math.max(...guestHistory.map(s => s.score)) : 0,
+      most_used_engine: guestHistory.length ? (guestHistory.filter(s => s.scan_type === 'ml').length >= guestHistory.filter(s => s.scan_type === 'rule-based').length ? 'Pretrained AI' : 'Rule-Based') : 'N/A'
+    }
+  } : null;
+
+  const activeOverview = isGuest ? computedOverview : overview;
+  const isOverviewActiveLoading = isGuest ? false : isOverviewLoading;
+
+  const activeRecentThreats = isGuest 
+    ? guestHistory.map(h => ({
+        id: h.scan_id,
+        url: h.scanned_url,
+        status: h.status,
+        score: h.score,
+        scan_type: h.scan_type,
+        created_at: h.timestamp
+      }))
+    : recentThreats;
+  const isRecentThreatsActiveLoading = isGuest ? false : isRecentThreatsLoading;
+
   const displayEmptyState = (title: string, description: string, buttonText: string) => (
     <div className="flex flex-col items-center justify-center h-[280px] text-center p-6 border border-dashed border-white/10 rounded-xl bg-white/[0.01] transition-all hover:bg-white/[0.02]">
       <div className="relative mb-3">
@@ -327,9 +424,14 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 text-blue-500 text-xs font-mono font-bold uppercase tracking-widest">
             <Terminal className="w-3.5 h-3.5" /> Security Operations Center
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Welcome, Agent {userName}</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            {isGuest ? "Welcome, Guest Agent" : `Welcome, Agent ${userName}`}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Command panel for deep analysis and real-time threat intelligence.
+            {isGuest 
+              ? "Temporary command panel for deep analysis and threat scanning."
+              : "Command panel for deep analysis and real-time threat intelligence."
+            }
           </p>
         </div>
         <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg text-xs font-mono">
@@ -369,6 +471,7 @@ export default function DashboardPage() {
               >
                 <option value="rule-based">🔍 Rule-Based Engine</option>
                 <option value="pretrained">🤖 Pretrained ML Model</option>
+                <option value="comparison">⚖️ Compare Both Engines</option>
                 <option value="custom">🚧 Custom AI</option>
               </select>
               <Button 
@@ -426,7 +529,7 @@ export default function DashboardPage() {
 
       {/* STAT CARDS SECTION */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {isOverviewLoading || !overview ? (
+        {isOverviewActiveLoading || !activeOverview ? (
           Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)
         ) : (
           <>
@@ -439,9 +542,11 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold tracking-tight font-mono text-foreground">
-                  <AnimatedCounter value={overview.total_scans} />
+                  <AnimatedCounter value={activeOverview.total_scans} />
                 </div>
-                <div className="text-[10px] text-muted-foreground mt-1">Aggregated history</div>
+                <div className="text-[10px] text-muted-foreground mt-1">
+                  {isGuest ? 'Temporary local memory' : 'Aggregated history'}
+                </div>
               </CardContent>
             </Card>
 
@@ -454,7 +559,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold tracking-tight font-mono text-red-400">
-                  <AnimatedCounter value={overview.dangerous_count} />
+                  <AnimatedCounter value={activeOverview.dangerous_count} />
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1">High severity threats</div>
               </CardContent>
@@ -469,7 +574,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold tracking-tight font-mono text-yellow-400">
-                  <AnimatedCounter value={overview.suspicious_count} />
+                  <AnimatedCounter value={activeOverview.suspicious_count} />
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1">Medium risk warnings</div>
               </CardContent>
@@ -484,7 +589,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold tracking-tight font-mono text-green-400">
-                  <AnimatedCounter value={overview.safe_count} />
+                  <AnimatedCounter value={activeOverview.safe_count} />
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1">Clean signatures</div>
               </CardContent>
@@ -499,10 +604,10 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold tracking-tight font-mono text-purple-400">
-                  <AnimatedCounter value={overview.ml_scan_count} />
+                  <AnimatedCounter value={activeOverview.ml_scan_count} />
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1">
-                  {overview.total_ml_percentage}% usage count
+                  {activeOverview.total_ml_percentage}% usage count
                 </div>
               </CardContent>
             </Card>
@@ -516,10 +621,10 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold tracking-tight font-mono text-cyan-400">
-                  <AnimatedCounter value={overview.rule_based_count} />
+                  <AnimatedCounter value={activeOverview.rule_based_count} />
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1">
-                  {overview.total_rule_based_percentage}% usage count
+                  {activeOverview.total_rule_based_percentage}% usage count
                 </div>
               </CardContent>
             </Card>
@@ -527,269 +632,306 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* CHARTS CONTAINER */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Chart 1: Scan Timeline */}
-        <div className="lg:col-span-2">
-          {isTrendsLoading || !mounted ? (
-            <ChartSkeleton />
-          ) : trends && trends.length > 0 && overview && overview.total_scans > 0 ? (
-            <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-blue-400" />
-                  Scan Activity Timeline
-                </CardTitle>
-                <CardDescription>Daily threat scanning statistics for the past 7 days.</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[270px] w-full pr-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={trends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorDangerous" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
-                    <XAxis dataKey="date" stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} />
-                    <YAxis stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} allowDecimals={false} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area type="monotone" dataKey="total" name="Total Scans" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" />
-                    <Area type="monotone" dataKey="dangerous" name="Dangerous Scans" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorDangerous)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-blue-400" /> Scan Activity Timeline
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-[270px]">
-                {displayEmptyState("Start your first threat analysis", "Run a scan to generate timeline metrics.", "Deploy Scanner")}
-              </CardContent>
-            </Card>
-          )}
-        </div>
+      {/* CHARTS & INSIGHTS CONTAINER OR UPGRADE CARD */}
+      {!isGuest ? (
+        <>
+          {/* CHARTS CONTAINER */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Chart 1: Scan Timeline */}
+            <div className="lg:col-span-2">
+              {isTrendsLoading || !mounted ? (
+                <ChartSkeleton />
+              ) : trends && trends.length > 0 && overview && overview.total_scans > 0 ? (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-blue-400" />
+                      Scan Activity Timeline
+                    </CardTitle>
+                    <CardDescription>Daily threat scanning statistics for the past 7 days.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[270px] w-full pr-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={trends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorDangerous" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2}/>
+                            <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                        <XAxis dataKey="date" stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} />
+                        <YAxis stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} allowDecimals={false} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Area type="monotone" dataKey="total" name="Total Scans" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" />
+                        <Area type="monotone" dataKey="dangerous" name="Dangerous Scans" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorDangerous)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-blue-400" /> Scan Activity Timeline
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-[270px]">
+                    {displayEmptyState("Start your first threat analysis", "Run a scan to generate timeline metrics.", "Deploy Scanner")}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
 
-        {/* Chart 2: Threat Distribution */}
-        <div>
-          {isOverviewLoading || !mounted ? (
-            <ChartSkeleton />
-          ) : overview && overview.total_scans > 0 ? (
-            <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px] flex flex-col">
-              <CardHeader className="pb-0">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <PieIcon className="w-4 h-4 text-purple-400" />
-                  Threat Distribution
-                </CardTitle>
-                <CardDescription>Visual severity breakout of URL reports.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1 h-[250px] w-full flex flex-col justify-center">
-                <div className="h-[180px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
+            {/* Chart 2: Threat Distribution */}
+            <div>
+              {isOverviewLoading || !mounted ? (
+                <ChartSkeleton />
+              ) : overview && overview.total_scans > 0 ? (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px] flex flex-col">
+                  <CardHeader className="pb-0">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <PieIcon className="w-4 h-4 text-purple-400" />
+                      Threat Distribution
+                    </CardTitle>
+                    <CardDescription>Visual severity breakout of URL reports.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 h-[250px] w-full flex flex-col justify-center">
+                    <div className="h-[180px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'Safe', value: overview.safe_count, color: '#10b981' },
+                              { name: 'Suspicious', value: overview.suspicious_count, color: '#f59e0b' },
+                              { name: 'Dangerous', value: overview.dangerous_count, color: '#ef4444' }
+                            ]}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={70}
+                            paddingAngle={5}
+                            dataKey="value"
+                          >
+                            {[
+                              { name: 'Safe', color: '#10b981' },
+                              { name: 'Suspicious', color: '#f59e0b' },
+                              { name: 'Dangerous', color: '#ef4444' }
+                            ].map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<CustomTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex justify-center gap-4 text-xs font-mono mt-1">
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500" /> Safe</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500" /> Warning</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Danger</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <PieIcon className="w-4 h-4 text-purple-400" /> Threat Distribution
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-[270px]">
+                    {displayEmptyState("Analyze threat breakout", "Run a scan to generate severity distribution.", "Deploy Scanner")}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+          </div>
+
+          {/* INSIGHTS & ENGINE BAR CHART ROW */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Insights Panel */}
+            <div className="lg:col-span-2">
+              {isOverviewLoading || !overview ? (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] animate-pulse">
+                  <CardHeader><div className="h-5 w-48 bg-white/10 rounded" /></CardHeader>
+                  <CardContent className="space-y-4"><div className="h-20 bg-white/5 rounded" /><div className="h-20 bg-white/5 rounded" /></CardContent>
+                </Card>
+              ) : (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
+                      Threat Intelligence Insights
+                    </CardTitle>
+                    <CardDescription>Actionable heuristics derived from scanned database artifacts.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-auto">
+                    <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
+                      <div className="p-2 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                        <Target className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-muted-foreground font-mono uppercase">Most Abused Keyword</span>
+                        <span className="font-mono text-sm font-bold text-white truncate block capitalize">
+                          {overview.insights.most_common_keyword}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
+                      <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-red-400">
+                        <ShieldAlert className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-muted-foreground font-mono uppercase">Max Recorded Score</span>
+                        <span className="font-mono text-sm font-bold text-red-400 block">
+                          {overview.insights.highest_threat_score}/100
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
+                      <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                        <TrendingUp className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-muted-foreground font-mono uppercase">Primary Engine Used</span>
+                        <span className="font-mono text-sm font-bold text-white block">
+                          {overview.insights.most_used_engine}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
+                      <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-400">
+                        <AlertTriangle className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block text-[10px] text-muted-foreground font-mono uppercase">Top Vulnerability Trigger</span>
+                        <span className="font-mono text-xs font-semibold text-white block truncate max-w-[200px]" title={overview.insights.most_detected_pattern}>
+                          {overview.insights.most_detected_pattern}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                  <div className="px-6 pb-4 pt-2 border-t border-white/5 text-[10px] text-muted-foreground font-mono flex items-center justify-between">
+                    <span>Database Sync Time: Live</span>
+                    <span>Audit Logs: Enforced</span>
+                  </div>
+                </Card>
+              )}
+            </div>
+
+            {/* Engine Usage Bar Chart */}
+            <div>
+              {isOverviewLoading || !mounted ? (
+                <ChartSkeleton />
+              ) : overview && overview.total_scans > 0 ? (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
+                  <CardHeader className="pb-0">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-cyan-400" />
+                      Engine Utilisation
+                    </CardTitle>
+                    <CardDescription>Rule-Based heuristics vs Model predictions.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[210px] w-full pt-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart 
                         data={[
-                          { name: 'Safe', value: overview.safe_count, color: '#10b981' },
-                          { name: 'Suspicious', value: overview.suspicious_count, color: '#f59e0b' },
-                          { name: 'Dangerous', value: overview.dangerous_count, color: '#ef4444' }
+                          { name: 'ML Engine', count: overview.ml_scan_count, fill: '#8b5cf6' },
+                          { name: 'Rule-Based', count: overview.rule_based_count, fill: '#06b6d4' }
                         ]}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={70}
-                        paddingAngle={5}
-                        dataKey="value"
+                        margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
                       >
-                        {[
-                          { name: 'Safe', color: '#10b981' },
-                          { name: 'Suspicious', color: '#f59e0b' },
-                          { name: 'Dangerous', color: '#ef4444' }
-                        ].map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<CustomTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex justify-center gap-4 text-xs font-mono mt-1">
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500" /> Safe</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500" /> Warning</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Danger</span>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <PieIcon className="w-4 h-4 text-purple-400" /> Threat Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-[270px]">
-                {displayEmptyState("Analyze threat breakout", "Run a scan to generate severity distribution.", "Deploy Scanner")}
-              </CardContent>
-            </Card>
-          )}
-        </div>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                        <XAxis dataKey="name" stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} />
+                        <YAxis stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} allowDecimals={false} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar dataKey="count" name="Scans Run" radius={[4, 4, 0, 0]}>
+                          <Cell fill="#8b5cf6" />
+                          <Cell fill="#06b6d4" />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                  <div className="px-6 pb-4 text-[10px] text-muted-foreground font-mono text-center">
+                    Engine comparison index based on real execution.
+                  </div>
+                </Card>
+              ) : (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px]">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-cyan-400" /> Engine Utilisation
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="h-[240px]">
+                    {displayEmptyState("Compare engine statistics", "Run a scan to generate engine comparison indexes.", "Deploy Scanner")}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
 
-      </div>
-
-      {/* INSIGHTS & ENGINE BAR CHART ROW */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Insights Panel */}
-        <div className="lg:col-span-2">
-          {isOverviewLoading || !overview ? (
-            <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] animate-pulse">
-              <CardHeader><div className="h-5 w-48 bg-white/10 rounded" /></CardHeader>
-              <CardContent className="space-y-4"><div className="h-20 bg-white/5 rounded" /><div className="h-20 bg-white/5 rounded" /></CardContent>
-            </Card>
-          ) : (
-            <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
-                  Threat Intelligence Insights
-                </CardTitle>
-                <CardDescription>Actionable heuristics derived from scanned database artifacts.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-auto">
-                <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
-                  <div className="p-2 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
-                    <Target className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="block text-[10px] text-muted-foreground font-mono uppercase">Most Abused Keyword</span>
-                    <span className="font-mono text-sm font-bold text-white truncate block capitalize">
-                      {overview.insights.most_common_keyword}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
-                  <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-red-400">
-                    <ShieldAlert className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="block text-[10px] text-muted-foreground font-mono uppercase">Max Recorded Score</span>
-                    <span className="font-mono text-sm font-bold text-red-400 block">
-                      {overview.insights.highest_threat_score}/100
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
-                  <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                    <TrendingUp className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="block text-[10px] text-muted-foreground font-mono uppercase">Primary Engine Used</span>
-                    <span className="font-mono text-sm font-bold text-white block">
-                      {overview.insights.most_used_engine}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
-                  <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-400">
-                    <AlertTriangle className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="block text-[10px] text-muted-foreground font-mono uppercase">Top Vulnerability Trigger</span>
-                    <span className="font-mono text-xs font-semibold text-white block truncate max-w-[200px]" title={overview.insights.most_detected_pattern}>
-                      {overview.insights.most_detected_pattern}
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-              <div className="px-6 pb-4 pt-2 border-t border-white/5 text-[10px] text-muted-foreground font-mono flex items-center justify-between">
-                <span>Database Sync Time: Live</span>
-                <span>Audit Logs: Enforced</span>
-              </div>
-            </Card>
-          )}
-        </div>
-
-        {/* Engine Usage Bar Chart */}
-        <div>
-          {isOverviewLoading || !mounted ? (
-            <ChartSkeleton />
-          ) : overview && overview.total_scans > 0 ? (
-            <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
-              <CardHeader className="pb-0">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-cyan-400" />
-                  Engine Utilisation
-                </CardTitle>
-                <CardDescription>Rule-Based heuristics vs Model predictions.</CardDescription>
-              </CardHeader>
-              <CardContent className="h-[210px] w-full pt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart 
-                    data={[
-                      { name: 'ML Engine', count: overview.ml_scan_count, fill: '#8b5cf6' },
-                      { name: 'Rule-Based', count: overview.rule_based_count, fill: '#06b6d4' }
-                    ]}
-                    margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
-                    <XAxis dataKey="name" stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} />
-                    <YAxis stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} allowDecimals={false} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="count" name="Scans Run" radius={[4, 4, 0, 0]}>
-                      <Cell fill="#8b5cf6" />
-                      <Cell fill="#06b6d4" />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-              <div className="px-6 pb-4 text-[10px] text-muted-foreground font-mono text-center">
-                Engine comparison index based on real execution.
-              </div>
-            </Card>
-          ) : (
-            <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px]">
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-cyan-400" /> Engine Utilisation
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-[240px]">
-                {displayEmptyState("Compare engine statistics", "Run a scan to generate engine comparison indexes.", "Deploy Scanner")}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-      </div>
+          </div>
+        </>
+      ) : (
+        <Card className="border-white/10 bg-black/40 backdrop-blur-xl relative overflow-hidden p-8 text-center flex flex-col items-center justify-center space-y-6 shadow-[0_0_50px_rgba(0,0,0,0.6)] rounded-xl min-h-[350px]">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-cyan-500/5" />
+          <div className="relative">
+            <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-2xl animate-pulse" />
+            <div className="p-4 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 relative z-10">
+              <ShieldAlert className="w-10 h-10" />
+            </div>
+          </div>
+          <div className="space-y-2 max-w-lg relative z-10">
+            <h3 className="text-xl font-bold tracking-tight text-white">Unlock Historical Threat Analytics</h3>
+            <p className="text-sm text-muted-foreground">
+              You are currently using <span className="text-amber-400 font-semibold font-mono">Guest Mode</span>.
+              Your threat scans are stored only in temporary local memory, limited to 10 entries, and lack deep dashboard analytics.
+            </p>
+            <p className="text-xs text-muted-foreground/60 max-w-md mx-auto">
+              Upgrade to a secure PhishGuard account to save your historical records, view interactive trend charts, monitor detection stats, and unlock full security dashboard features.
+            </p>
+          </div>
+          <div className="flex gap-4 relative z-10">
+            <Link href="/login">
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-[0_0_15px_rgba(37,99,235,0.4)] active:scale-95">
+                Register / Login
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      )}
 
       {/* RECENT DANGEROUS/SUSPICIOUS SCANS */}
       <Card className="border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl">
         <CardHeader className="border-b border-white/10 pb-4">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
-            Recent Threats Detected
+            {isGuest ? "Recent Temporary Scans" : "Recent Threats Detected"}
           </CardTitle>
-          <CardDescription>Chronological ledger of medium and high-threat analyses flagged in your workspace.</CardDescription>
+          <CardDescription>
+            {isGuest 
+              ? "Your temporary scan ledger in this session (retains up to 10 scans in browser memory)."
+              : "Chronological ledger of medium and high-threat analyses flagged in your workspace."
+            }
+          </CardDescription>
         </CardHeader>
         <CardContent className="pt-4 px-0 sm:px-6">
-          {isRecentThreatsLoading ? (
+          {isRecentThreatsActiveLoading ? (
             <div className="flex flex-col items-center justify-center py-10 space-y-2">
               <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
               <p className="text-xs text-muted-foreground font-mono">Querying threat tables...</p>
             </div>
-          ) : recentThreats && recentThreats.length > 0 ? (
+          ) : activeRecentThreats && activeRecentThreats.length > 0 ? (
             <div className="overflow-x-auto w-full">
               <table className="w-full text-left text-xs sm:text-sm text-muted-foreground font-mono border-collapse">
                 <thead>
@@ -803,10 +945,10 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentThreats.map((threat) => (
+                  {activeRecentThreats.map((threat) => (
                     <tr 
                       key={threat.id} 
-                      onClick={() => router.push(`/scan/${threat.id}`)}
+                      onClick={() => router.push(`/scan/${threat.id}${isGuest ? '?guest=true' : ''}`)}
                       className="border-b border-white/5 hover:bg-white/5 cursor-pointer group transition-all duration-300 hover:shadow-[inset_0_0_15px_rgba(239,68,68,0.02)]"
                     >
                       <td className="py-3.5 px-4 font-medium text-foreground truncate max-w-[150px] sm:max-w-[250px] font-mono group-hover:text-blue-400 transition-colors" title={threat.url}>
@@ -822,7 +964,7 @@ export default function DashboardPage() {
                         <span className="text-[10px] text-muted-foreground">/100</span>
                       </td>
                       <td className="py-3.5 px-4 capitalize hidden md:table-cell">
-                        {threat.scan_type === 'ml' ? 'Pretrained AI' : 'Rule-Based'}
+                        {threat.scan_type === 'ml' ? 'Pretrained AI' : threat.scan_type === 'comparison' ? 'Engine Comparison' : 'Rule-Based'}
                       </td>
                       <td className="py-3.5 px-4 text-[10px] hidden sm:table-cell">
                         {new Date(threat.created_at).toLocaleString()}

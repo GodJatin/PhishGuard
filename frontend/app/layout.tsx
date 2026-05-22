@@ -7,8 +7,14 @@ import { Toaster } from 'react-hot-toast';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'PhishGuard | Smart Phishing URL Detection System',
+  title: 'PhishGuard | Smart Phishing URL Detection Platform',
   description: 'AI-powered phishing detection and threat analysis platform.',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'PhishGuard',
+  },
 };
 
 export default function RootLayout({

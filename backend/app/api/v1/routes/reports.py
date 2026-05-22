@@ -172,3 +172,80 @@ def export_txt(scan_id: str, user_id: str = Depends(get_current_user_id)):
     except Exception as e:
         logger.exception("Failed to generate TXT export")
         raise HTTPException(status_code=500, detail=f"TXT generation failed: {str(e)}")
+
+@router.post("/export/pdf")
+def export_pdf_post(scan_data: dict):
+    """
+    Export detailed report as a professional PDF from a posted raw scan payload.
+    Supports session-less guest users.
+    """
+    try:
+        pdf_bytes = generate_pdf_report(scan_data)
+        url = scan_data.get("url") or scan_data.get("scanned_url", "")
+        filename = get_sanitized_filename(url, "pdf")
+        
+        stream = io.BytesIO(pdf_bytes)
+        stream.seek(0)
+        
+        return StreamingResponse(
+            stream_and_close(stream),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+    except Exception as e:
+        logger.exception("Failed to generate PDF export from payload")
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+
+@router.post("/export/json")
+def export_json_post(scan_data: dict):
+    """
+    Export detailed report as raw pretty JSON from a posted raw scan payload.
+    """
+    try:
+        json_str = generate_json_report(scan_data)
+        url = scan_data.get("url") or scan_data.get("scanned_url", "")
+        filename = get_sanitized_filename(url, "json")
+        
+        stream = io.BytesIO(json_str.encode("utf-8"))
+        stream.seek(0)
+        
+        return StreamingResponse(
+            stream_and_close(stream),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+    except Exception as e:
+        logger.exception("Failed to generate JSON export from payload")
+        raise HTTPException(status_code=500, detail=f"JSON generation failed: {str(e)}")
+
+@router.post("/export/txt")
+def export_txt_post(scan_data: dict):
+    """
+    Export detailed report as structured plain-text from a posted raw scan payload.
+    """
+    try:
+        txt_str = generate_txt_report(scan_data)
+        url = scan_data.get("url") or scan_data.get("scanned_url", "")
+        filename = get_sanitized_filename(url, "txt")
+        
+        stream = io.BytesIO(txt_str.encode("utf-8"))
+        stream.seek(0)
+        
+        return StreamingResponse(
+            stream_and_close(stream),
+            media_type="text/plain",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+    except Exception as e:
+        logger.exception("Failed to generate TXT export from payload")
+        raise HTTPException(status_code=500, detail=f"TXT generation failed: {str(e)}")
+

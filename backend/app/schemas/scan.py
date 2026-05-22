@@ -18,6 +18,14 @@ class TechnicalDetails(BaseModel):
     path_depth: Optional[int] = None
     query_parameter_count: Optional[int] = None
     entropy_score: Optional[float] = None
+    # Explainable scoring
+    scoring_breakdown: Optional[List[Dict[str, Any]]] = None
+    # Comparison-specific fields
+    rule_based_result: Optional[Dict[str, Any]] = None
+    ml_result: Optional[Dict[str, Any]] = None
+    shared_indicators: Optional[List[str]] = None
+    unique_findings: Optional[Dict[str, List[str]]] = None
+    score_difference: Optional[int] = None
 
 class ScanResponse(BaseModel):
     scan_id: str
@@ -31,3 +39,4 @@ class ScanResponse(BaseModel):
     timestamp: str
     # ML-specific confidence (optional)
     confidence: Optional[float] = None
+

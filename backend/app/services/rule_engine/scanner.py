@@ -38,7 +38,8 @@ def analyze_url(url: str) -> ScanResponse:
         contains_ip=raw_details["contains_ip"],
         suspicious_keywords_found=raw_details["suspicious_keywords_found"],
         suspicious_tld=raw_details["suspicious_tld"],
-        redirect_pattern_detected=raw_details["redirect_pattern_detected"]
+        redirect_pattern_detected=raw_details["redirect_pattern_detected"],
+        scoring_breakdown=raw_details.get("scoring_breakdown")
     )
 
     return ScanResponse(

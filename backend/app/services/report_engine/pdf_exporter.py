@@ -17,17 +17,23 @@ def safe_xml_escape(text: str) -> str:
 
 def _format_url_for_wrap(url: str) -> str:
     """
-    Escapes special characters and inserts zero-width spaces (\u200b)
+    Escapes special characters and inserts extremely tiny spaces in font tags
     after key characters to allow ReportLab Paragraph to wrap long URLs.
+    This avoids rendering malformed black box artifacts (■) from \u200b characters.
     """
     if not url:
         return ""
     escaped = html.escape(url)
-    for char in ['/', '?', '=', '.', '-', '_']:
-        escaped = escaped.replace(char, f"{char}\u200b")
-    # Specifically handle &amp; to avoid breaking it with zero-width spaces
-    escaped = escaped.replace('&amp;', '&amp;\u200b')
-    return escaped
+    
+    result = []
+    break_chars = {'/', '?', '=', '.', '-', '_'}
+    for char in escaped:
+        result.append(char)
+        if char in break_chars:
+            result.append('<font size="0.1"> </font>')
+    escaped_wrapped = "".join(result)
+    escaped_wrapped = escaped_wrapped.replace('&amp;', '&amp;<font size="0.1"> </font>')
+    return escaped_wrapped
 
 
 def generate_pdf_report(scan: dict) -> bytes:
@@ -50,42 +56,43 @@ def generate_pdf_report(scan: dict) -> bytes:
         'DocTitle',
         parent=styles['Heading1'],
         fontName='Helvetica-Bold',
-        fontSize=22,
+        fontSize=20,
         textColor=colors.HexColor('#0F172A'),
-        spaceAfter=12
+        spaceAfter=10
     )
     
     section_title_style = ParagraphStyle(
         'SectionTitle',
         parent=styles['Heading2'],
         fontName='Helvetica-Bold',
-        fontSize=13,
+        fontSize=12,
         textColor=colors.HexColor('#1E293B'),
-        spaceBefore=14,
-        spaceAfter=6
+        spaceBefore=12,
+        spaceAfter=5
     )
     
     body_style = ParagraphStyle(
         'DocBody',
         parent=styles['Normal'],
         fontName='Helvetica',
-        fontSize=9.5,
-        leading=13.5,
+        fontSize=9,
+        leading=13,
         textColor=colors.HexColor('#334155'),
-        spaceAfter=6
+        spaceAfter=5
     )
     
     mono_style = ParagraphStyle(
         'DocMono',
         parent=styles['Normal'],
         fontName='Courier',
-        fontSize=8.5,
-        leading=11,
+        fontSize=8,
+        leading=10,
         textColor=colors.HexColor('#0F172A')
     )
     
     status = scan.get("status", "unknown").upper()
     score = scan.get("score", 0)
+    scan_type = scan.get("scan_type", "rule-based")
     
     tech = scan.get("technical_details", {})
     if isinstance(tech, str):
@@ -94,7 +101,7 @@ def generate_pdf_report(scan: dict) -> bytes:
             tech = json.loads(tech)
         except Exception:
             tech = {}
-    
+            
     # Status colors
     if status == 'SAFE':
         status_color = colors.HexColor('#10B981')  # Emerald Green
@@ -113,22 +120,22 @@ def generate_pdf_report(scan: dict) -> bytes:
         'BrandText',
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
-        fontSize=16,
-        textColor=colors.HexColor('#2563EB') # Blue-600
+        fontSize=15,
+        textColor=colors.HexColor('#2563EB')
     )
     meta_style = ParagraphStyle(
         'MetaText',
         parent=styles['Normal'],
         alignment=2, # Right aligned
         fontName='Helvetica',
-        fontSize=8.5,
+        fontSize=8,
         textColor=colors.HexColor('#64748B')
     )
     
     header_data = [
         [
             Paragraph("<b>PhishGuard</b> <font color='#64748B'>| Threat Intelligence</font>", brand_style),
-            Paragraph(f"<b>Generated:</b> {scan.get('created_at', '')[:19]}<br/><b>Report ID:</b> {scan.get('id', '')[:8]}...", meta_style)
+            Paragraph(f"<b>Generated:</b> {(scan.get('created_at') or scan.get('timestamp') or '')[:19]}<br/><b>Report ID:</b> {(scan.get('id') or scan.get('scan_id') or '')[:8]}...", meta_style)
         ]
     ]
     header_table = Table(header_data, colWidths=[4.2*inch, 2.8*inch])
@@ -147,20 +154,20 @@ def generate_pdf_report(scan: dict) -> bytes:
         ('TOPPADDING', (0,0), (-1,-1), 0),
     ]))
     story.append(divider)
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 10))
     
     # Title
     story.append(Paragraph("Detailed Threat Analysis Report", title_style))
-    story.append(Spacer(1, 4))
+    story.append(Spacer(1, 2))
     
     # 2. Scanned URL Widget
-    wrapped_url = _format_url_for_wrap(scan.get('url', ''))
+    wrapped_url = _format_url_for_wrap(scan.get('url') or scan.get('scanned_url', ''))
     url_content_style = ParagraphStyle(
         'UrlContent',
         parent=styles['Normal'],
         fontName='Courier',
-        fontSize=9.5,
-        leading=13,
+        fontSize=9,
+        leading=12,
         textColor=colors.HexColor('#1E293B')
     )
     
@@ -172,59 +179,148 @@ def generate_pdf_report(scan: dict) -> bytes:
     url_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
         ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#E2E8F0')),
-        ('PADDING', (0,0), (-1,-1), 10),
+        ('PADDING', (0,0), (-1,-1), 8),
         ('ROUNDEDCORNERS', [4, 4, 4, 4]),
     ]))
     story.append(url_table)
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 10))
     
-    # 3. Threat Score, Severity Banner & Model Confidence (Dynamic side-by-side)
-    score_style = ParagraphStyle(
-        'ScoreVal',
-        parent=styles['Normal'],
-        alignment=1, # Center
-        fontName='Helvetica-Bold',
-        fontSize=28,
-        textColor=colors.HexColor('#0F172A'),
-        leading=32
-    )
-    score_lbl_style = ParagraphStyle(
-        'ScoreLbl',
-        parent=styles['Normal'],
-        alignment=1,
-        fontName='Helvetica-Bold',
-        fontSize=9,
-        textColor=colors.HexColor('#475569'),
-        spaceAfter=4
-    )
-    
-    status_val_style = ParagraphStyle(
-        'StatusVal',
-        parent=styles['Normal'],
-        alignment=1,
-        fontName='Helvetica-Bold',
-        fontSize=18,
-        textColor=status_color,
-        leading=22
-    )
-    status_lbl_style = ParagraphStyle(
-        'StatusLbl', parent=score_lbl_style
-    )
-
-    confidence_val = tech.get("confidence")
-    if confidence_val is not None:
-        confidence_pct = float(confidence_val) * 100
-        conf_style = ParagraphStyle(
-            'ConfVal',
+    # Check if this is a comparison report
+    if scan_type == "comparison":
+        rule_res = tech.get("rule_based_result", {})
+        ml_res = tech.get("ml_result", {})
+        
+        score_lbl_style = ParagraphStyle(
+            'ScoreLblComp',
             parent=styles['Normal'],
-            alignment=1, # Center
+            alignment=1,
             fontName='Helvetica-Bold',
-            fontSize=28,
-            textColor=colors.HexColor('#2563EB'), # Blue
-            leading=32
+            fontSize=9,
+            textColor=colors.HexColor('#475569')
         )
-        conf_lbl_style = ParagraphStyle(
-            'ConfLbl',
+        score_val_style = ParagraphStyle(
+            'ScoreValComp',
+            parent=styles['Normal'],
+            alignment=1,
+            fontName='Helvetica-Bold',
+            fontSize=22,
+            textColor=colors.HexColor('#0F172A'),
+            leading=26
+        )
+        
+        rule_status = rule_res.get("status", "SAFE").upper()
+        ml_status = ml_res.get("status", "SAFE").upper()
+        
+        def get_status_hex(s):
+            if s == 'SAFE': return '#10B981'
+            if s == 'SUSPICIOUS': return '#F59E0B'
+            return '#EF4444'
+            
+        rule_color = colors.HexColor(get_status_hex(rule_status))
+        ml_color = colors.HexColor(get_status_hex(ml_status))
+        
+        score_data = [
+            [
+                [
+                    Paragraph("RULE-BASED SCAN SCORE", score_lbl_style),
+                    Paragraph(f"{rule_res.get('score', 0)}<font size=11 color='#64748B'>/100</font>", score_val_style),
+                    Paragraph(f"<b>STATUS: {rule_status}</b>", ParagraphStyle('RStat', parent=score_lbl_style, alignment=1, textColor=rule_color))
+                ],
+                [
+                    Paragraph("ML DETECTION ENGINE SCORE", score_lbl_style),
+                    Paragraph(f"{ml_res.get('score', 0)}<font size=11 color='#64748B'>/100</font>", score_val_style),
+                    Paragraph(f"<b>STATUS: {ml_status}</b><br/><font size=8 color='#64748B'>Confidence: {float(ml_res.get('confidence', 0))*100:.1f}%</font>", ParagraphStyle('MStat', parent=score_lbl_style, alignment=1, textColor=ml_color))
+                ]
+            ]
+        ]
+        score_table = Table(score_data, colWidths=[3.5*inch, 3.5*inch])
+        score_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
+            ('BACKGROUND', (1,0), (1,0), colors.HexColor('#F8FAFC')),
+            ('BOX', (0,0), (0,0), 1.2, rule_color),
+            ('BOX', (1,0), (1,0), 1.2, ml_color),
+            ('PADDING', (0,0), (-1,-1), 10),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        story.append(score_table)
+        story.append(Spacer(1, 10))
+        
+        # Engine Findings Comparison Table
+        story.append(Paragraph("Comparison of Findings", section_title_style))
+        
+        rule_reasons = rule_res.get("reasons", [])
+        ml_reasons = ml_res.get("reasons", [])
+        
+        rule_p_list = [Paragraph("<b>Rule-Based Detections:</b>", ParagraphStyle('RLbl', parent=body_style, fontName='Helvetica-Bold'))]
+        if rule_reasons:
+            for r in rule_reasons:
+                rule_p_list.append(Paragraph(f"<font color='{rule_color.hexval()}'><b>•</b></font> {safe_xml_escape(r)}", body_style))
+        else:
+            rule_p_list.append(Paragraph("No rule violations triggered.", body_style))
+            
+        ml_p_list = [Paragraph("<b>ML Anomaly Findings:</b>", ParagraphStyle('MLbl', parent=body_style, fontName='Helvetica-Bold'))]
+        if ml_reasons:
+            for r in ml_reasons:
+                ml_p_list.append(Paragraph(f"<font color='{ml_color.hexval()}'><b>•</b></font> {safe_xml_escape(r)}", body_style))
+        else:
+            ml_p_list.append(Paragraph("No model anomalies identified.", body_style))
+            
+        findings_data = [[rule_p_list, ml_p_list]]
+        findings_table = Table(findings_data, colWidths=[3.5*inch, 3.5*inch])
+        findings_table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+            ('PADDING', (0,0), (-1,-1), 8),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FAFAFA')),
+        ]))
+        story.append(findings_table)
+        story.append(Spacer(1, 10))
+        
+        # Unified Threat Assessment details
+        story.append(Paragraph("Unified Threat Assessment Summary", section_title_style))
+        shared_inds = tech.get("shared_indicators", [])
+        unique_rules = tech.get("unique_findings", {}).get("rule_based", [])
+        unique_ml = tech.get("unique_findings", {}).get("ml", [])
+        
+        assessment_rows = []
+        if shared_inds:
+            assessment_rows.append([
+                Paragraph("<b>Shared Indicators:</b>", body_style),
+                Paragraph(", ".join(shared_inds), body_style)
+            ])
+        if unique_rules:
+            assessment_rows.append([
+                Paragraph("<b>Unique Heuristics:</b>", body_style),
+                Paragraph(", ".join(unique_rules), body_style)
+            ])
+        if unique_ml:
+            assessment_rows.append([
+                Paragraph("<b>Unique ML Features:</b>", body_style),
+                Paragraph(", ".join(unique_ml), body_style)
+            ])
+        assessment_rows.append([
+            Paragraph("<b>Threat Score Difference:</b>", body_style),
+            Paragraph(f"{tech.get('score_difference', 0)} points difference between engines", body_style)
+        ])
+        
+        assessment_table = Table(assessment_rows, colWidths=[2.2*inch, 4.8*inch])
+        assessment_table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+            ('PADDING', (0,0), (-1,-1), 5),
+            ('BACKGROUND', (0,0), (0,-1), colors.HexColor('#F8FAFC')),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        story.append(assessment_table)
+        story.append(Spacer(1, 10))
+        
+    else:
+        # Standard Scan layout
+        confidence_val = tech.get("confidence")
+        
+        # Typography and formatting
+        score_lbl_style = ParagraphStyle(
+            'ScoreLbl',
             parent=styles['Normal'],
             alignment=1,
             fontName='Helvetica-Bold',
@@ -232,89 +328,143 @@ def generate_pdf_report(scan: dict) -> bytes:
             textColor=colors.HexColor('#475569'),
             spaceAfter=4
         )
-        score_status_data = [
-            [
-                [
-                    Paragraph("THREAT SCORE", score_lbl_style),
-                    Paragraph(f"{score}<font size=14 color='#64748B'>/100</font>", score_style)
-                ],
-                [
-                    Paragraph("SEVERITY STATUS", status_lbl_style),
-                    Paragraph(status, status_val_style)
-                ],
-                [
-                    Paragraph("MODEL CONFIDENCE", conf_lbl_style),
-                    Paragraph(f"{confidence_pct:.1f}<font size=14 color='#64748B'>%</font>", conf_style)
-                ]
-            ]
-        ]
-        score_status_table = Table(score_status_data, colWidths=[2.33*inch, 2.33*inch, 2.33*inch])
-        score_status_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
-            ('BACKGROUND', (1,0), (1,0), status_bg),
-            ('BACKGROUND', (2,0), (2,0), colors.HexColor('#EFF6FF')), # Light blue
-            ('BOX', (0,0), (0,0), 1, colors.HexColor('#E2E8F0')),
-            ('BOX', (1,0), (1,0), 1, status_color),
-            ('BOX', (2,0), (2,0), 1, colors.HexColor('#BFDBFE')),
-            ('PADDING', (0,0), (-1,-1), 14),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-    else:
-        score_status_data = [
-            [
-                [
-                    Paragraph("THREAT SCORE", score_lbl_style),
-                    Paragraph(f"{score}<font size=14 color='#64748B'>/100</font>", score_style)
-                ],
-                [
-                    Paragraph("SEVERITY STATUS", status_lbl_style),
-                    Paragraph(status, status_val_style)
-                ]
-            ]
-        ]
-        score_status_table = Table(score_status_data, colWidths=[3.5*inch, 3.5*inch])
-        score_status_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
-            ('BACKGROUND', (1,0), (1,0), status_bg),
-            ('BOX', (0,0), (0,0), 1, colors.HexColor('#E2E8F0')),
-            ('BOX', (1,0), (1,0), 1, status_color),
-            ('PADDING', (0,0), (-1,-1), 14),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-    story.append(score_status_table)
-    story.append(Spacer(1, 14))
-    
-    # 4. Findings Section
-    story.append(Paragraph("Analysis Findings", section_title_style))
-    reasons = scan.get("reasons", [])
-    if reasons:
-        reasons_list = []
-        for r in reasons:
-            escaped_r = safe_xml_escape(r)
-            reasons_list.append([Paragraph(f"<font color='{status_color.hexval()}'><b>•</b></font> {escaped_r}", body_style)])
-        reasons_table = Table(reasons_list, colWidths=[7*inch])
-        reasons_table.setStyle(TableStyle([
-            ('PADDING', (0,0), (-1,-1), 3),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ]))
-        story.append(reasons_table)
-    else:
-        story.append(Paragraph("No suspicious features or threat indicators were triggered. The URL passed all rule matches.", body_style))
+        score_style = ParagraphStyle(
+            'ScoreVal',
+            parent=styles['Normal'],
+            alignment=1,
+            fontName='Helvetica-Bold',
+            fontSize=28,
+            textColor=colors.HexColor('#0F172A'),
+            leading=32
+        )
+        status_val_style = ParagraphStyle(
+            'StatusVal',
+            parent=styles['Normal'],
+            alignment=1,
+            fontName='Helvetica-Bold',
+            fontSize=18,
+            textColor=status_color,
+            leading=22
+        )
+        status_lbl_style = ParagraphStyle(
+            'StatusLbl', parent=score_lbl_style
+        )
         
-    story.append(Spacer(1, 12))
-    
-    # 5. Technical Details Grid
-    story.append(Paragraph("Technical Parameters Audit", section_title_style))
-    tech = scan.get("technical_details", {})
-    if isinstance(tech, str):
-        import json
-        try:
-            tech = json.loads(tech)
-        except Exception:
-            tech = {}
+        if confidence_val is not None:
+            confidence_pct = float(confidence_val) * 100
+            conf_style = ParagraphStyle(
+                'ConfVal',
+                parent=styles['Normal'],
+                alignment=1,
+                fontName='Helvetica-Bold',
+                fontSize=28,
+                textColor=colors.HexColor('#2563EB'),
+                leading=32
+            )
+            score_status_data = [
+                [
+                    [
+                        Paragraph("THREAT SCORE", score_lbl_style),
+                        Paragraph(f"{score}<font size=14 color='#64748B'>/100</font>", score_style)
+                    ],
+                    [
+                        Paragraph("SEVERITY STATUS", status_lbl_style),
+                        Paragraph(status, status_val_style)
+                    ],
+                    [
+                        Paragraph("MODEL CONFIDENCE", score_lbl_style),
+                        Paragraph(f"{confidence_pct:.1f}<font size=14 color='#64748B'>%</font>", conf_style)
+                    ]
+                ]
+            ]
+            score_status_table = Table(score_status_data, colWidths=[2.33*inch, 2.33*inch, 2.33*inch])
+            score_status_table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
+                ('BACKGROUND', (1,0), (1,0), status_bg),
+                ('BACKGROUND', (2,0), (2,0), colors.HexColor('#EFF6FF')),
+                ('BOX', (0,0), (0,0), 1, colors.HexColor('#E2E8F0')),
+                ('BOX', (1,0), (1,0), 1, status_color),
+                ('BOX', (2,0), (2,0), 1, colors.HexColor('#BFDBFE')),
+                ('PADDING', (0,0), (-1,-1), 14),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ]))
+        else:
+            score_status_data = [
+                [
+                    [
+                        Paragraph("THREAT SCORE", score_lbl_style),
+                        Paragraph(f"{score}<font size=14 color='#64748B'>/100</font>", score_style)
+                    ],
+                    [
+                        Paragraph("SEVERITY STATUS", status_lbl_style),
+                        Paragraph(status, status_val_style)
+                    ]
+                ]
+            ]
+            score_status_table = Table(score_status_data, colWidths=[3.5*inch, 3.5*inch])
+            score_status_table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
+                ('BACKGROUND', (1,0), (1,0), status_bg),
+                ('BOX', (0,0), (0,0), 1, colors.HexColor('#E2E8F0')),
+                ('BOX', (1,0), (1,0), 1, status_color),
+                ('PADDING', (0,0), (-1,-1), 14),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ]))
+        story.append(score_status_table)
+        story.append(Spacer(1, 10))
+        
+        # Findings List
+        story.append(Paragraph("Analysis Findings", section_title_style))
+        reasons = scan.get("reasons", [])
+        if reasons:
+            reasons_list = []
+            for r in reasons:
+                escaped_r = safe_xml_escape(r)
+                reasons_list.append([Paragraph(f"<font color='{status_color.hexval()}'><b>•</b></font> {escaped_r}", body_style)])
+            reasons_table = Table(reasons_list, colWidths=[7*inch])
+            reasons_table.setStyle(TableStyle([
+                ('PADDING', (0,0), (-1,-1), 3),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ]))
+            story.append(reasons_table)
+        else:
+            story.append(Paragraph("No suspicious features or threat indicators were triggered. The URL passed all rule matches.", body_style))
+        story.append(Spacer(1, 10))
+
+    # Explainable Scoring Breakdown (common to standard scans that have it)
+    scoring_breakdown = tech.get("scoring_breakdown")
+    if scoring_breakdown:
+        story.append(Paragraph("Explainable Scoring Breakdown", section_title_style))
+        breakdown_rows = []
+        for b in scoring_breakdown:
+            rule_name = b.get("rule", "Threat indicator triggered")
+            pts = b.get("points", 0)
+            sign = "+" if pts >= 0 else ""
             
+            p_style = ParagraphStyle('PtsVal', parent=body_style, alignment=2, fontName='Helvetica-Bold')
+            if pts > 0:
+                p_style.textColor = colors.HexColor('#EF4444')
+            else:
+                p_style.textColor = colors.HexColor('#10B981')
+                
+            breakdown_rows.append([
+                Paragraph(f"• {rule_name}", body_style),
+                Paragraph(f"{sign}{pts} points", p_style)
+            ])
+        breakdown_table = Table(breakdown_rows, colWidths=[5.4*inch, 1.6*inch])
+        breakdown_table.setStyle(TableStyle([
+            ('PADDING', (0,0), (-1,-1), 4),
+            ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        story.append(breakdown_table)
+        story.append(Spacer(1, 10))
+
+    # 3. Technical Details Grid
+    story.append(Paragraph("Technical Parameters Audit", section_title_style))
+    
     # Escape and format domain for wrapping
     domain_val = tech.get("domain", "N/A")
     domain_wrapped = _format_url_for_wrap(domain_val)
@@ -370,13 +520,13 @@ def generate_pdf_report(scan: dict) -> bytes:
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
         ('BACKGROUND', (0,0), (0,-1), colors.HexColor('#F8FAFC')),
         ('BACKGROUND', (2,0), (2,-1), colors.HexColor('#F8FAFC')),
-        ('PADDING', (0,0), (-1,-1), 6),
+        ('PADDING', (0,0), (-1,-1), 5),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(tech_table)
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 10))
     
-    # 6. Recommendation Box
+    # 4. Recommendation Box
     rec_title_style = ParagraphStyle(
         'RecTitle',
         parent=styles['Normal'],
@@ -403,13 +553,13 @@ def generate_pdf_report(scan: dict) -> bytes:
     rec_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#EFF6FF')), # Blue-50
         ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#BFDBFE')),
-        ('PADDING', (0,0), (-1,-1), 10),
+        ('PADDING', (0,0), (-1,-1), 8),
         ('ROUNDEDCORNERS', [4, 4, 4, 4]),
     ]))
     story.append(rec_table)
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 15))
     
-    # 7. Footer
+    # 5. Footer
     footer_style = ParagraphStyle(
         'FooterText',
         parent=styles['Normal'],

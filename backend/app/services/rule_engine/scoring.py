@@ -72,6 +72,29 @@ def calculate_threat_score(url: str) -> Tuple[int, List[str], Dict[str, Any]]:
         score += constants.WEIGHT_DOUBLE_SLASH_PATH
         reasons.append("Double slash found in URL path; potential open redirect abuse.")
 
+    # Create detailed scoring breakdown
+    scoring_breakdown = []
+    if not technical_details["https"]:
+        scoring_breakdown.append({"rule": "Unencrypted connection (HTTP)", "points": constants.WEIGHT_NO_HTTPS})
+    if technical_details["contains_ip"]:
+        scoring_breakdown.append({"rule": "Domain is an IP address", "points": constants.WEIGHT_IP_ADDRESS})
+    if found_keywords:
+        scoring_breakdown.append({"rule": f"Suspicious keywords ({', '.join(found_keywords)})", "points": len(found_keywords) * constants.WEIGHT_SUSPICIOUS_KEYWORD})
+    if technical_details["url_length"] > constants.MAX_SAFE_URL_LENGTH:
+        scoring_breakdown.append({"rule": f"Excessively long URL ({technical_details['url_length']} chars)", "points": constants.WEIGHT_LONG_URL})
+    if technical_details["subdomain_count"] > constants.MAX_SAFE_SUBDOMAINS:
+        scoring_breakdown.append({"rule": f"Excessive subdomains ({technical_details['subdomain_count']} count)", "points": constants.WEIGHT_MANY_SUBDOMAINS})
+    if technical_details["suspicious_tld"]:
+        scoring_breakdown.append({"rule": f"Abused Top-Level Domain ({urllib.parse.urlparse(url).netloc.split('.')[-1]})", "points": constants.WEIGHT_SUSPICIOUS_TLD})
+    if technical_details["url_shortener"]:
+        scoring_breakdown.append({"rule": "Obscured URL shortener", "points": constants.WEIGHT_URL_SHORTENER})
+    if patterns.has_at_symbol(url):
+        scoring_breakdown.append({"rule": "Credential obfuscation (@ symbol)", "points": constants.WEIGHT_AT_SYMBOL})
+    if technical_details["redirect_pattern_detected"]:
+        scoring_breakdown.append({"rule": "Redirection pattern (// in path)", "points": constants.WEIGHT_DOUBLE_SLASH_PATH})
+
+    technical_details["scoring_breakdown"] = scoring_breakdown
+
     # Cap score at 100
     score = min(score, 100)
 
@@ -84,3 +107,4 @@ def classify_score(score: int) -> str:
         return "SUSPICIOUS"
     else:
         return "DANGEROUS"
+

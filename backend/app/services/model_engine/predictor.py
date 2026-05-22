@@ -82,6 +82,105 @@ def get_recommendation(status: str) -> str:
     else:
         return "Do not visit this URL. The ML model detected high probability of phishing or credential theft."
 
+def calculate_ml_scoring_breakdown(feats: Dict[str, Any], score: int) -> List[Dict[str, Any]]:
+    if score == 0:
+        return []
+        
+    raw_breakdown = []
+    
+    # 1. Scheme Check
+    if feats.get("https") == 0:
+        raw_breakdown.append({"rule": "Missing HTTPS encryption", "weight": 15})
+        
+    # 2. IP Address
+    if feats.get("contains_ip") == 1:
+        raw_breakdown.append({"rule": "IP address domain host", "weight": 30})
+        
+    # 3. Keywords
+    kw_count = int(feats.get("suspicious_keyword_count", 0))
+    if kw_count > 0:
+        raw_breakdown.append({"rule": f"Suspicious keywords ({kw_count} keywords)", "weight": kw_count * 15})
+        
+    # 4. Subdomains
+    sub_count = int(feats.get("subdomain_count", 0))
+    if sub_count > 2:
+        raw_breakdown.append({"rule": f"Excessive subdomain hierarchy ({sub_count} subdomains)", "weight": sub_count * 5})
+        
+    # 5. Hyphens
+    hyphens = int(feats.get("hyphen_count", 0))
+    if hyphens > 3:
+        raw_breakdown.append({"rule": f"Excessive use of hyphens ({hyphens} hyphens)", "weight": hyphens * 3})
+        
+    # 6. Digits
+    digits = int(feats.get("digit_count", 0))
+    if digits > 5:
+        raw_breakdown.append({"rule": f"High digit density ({digits} digits)", "weight": digits * 2})
+        
+    # 7. Special characters
+    special = int(feats.get("special_char_count", 0))
+    if special > 10:
+        raw_breakdown.append({"rule": f"High special character count ({special} chars)", "weight": special * 1})
+        
+    # 8. Length
+    length = int(feats.get("url_length", 0))
+    if length > 75:
+        raw_breakdown.append({"rule": f"Excessive URL length ({length} chars)", "weight": 10})
+        
+    # 9. Entropy
+    entropy = float(feats.get("entropy_score", 0.0))
+    if entropy > 4.2:
+        raw_breakdown.append({"rule": f"High URL string entropy ({entropy:.2f})", "weight": int(entropy * 3)})
+        
+    # 10. TLD
+    if feats.get("suspicious_tld") == 1:
+        raw_breakdown.append({"rule": "Suspicious TLD registered", "weight": 15})
+        
+    # 11. Query Params
+    qp = int(feats.get("query_parameter_count", 0))
+    if qp > 2:
+        raw_breakdown.append({"rule": f"High query parameter density ({qp} parameters)", "weight": qp * 3})
+        
+    # 12. At Symbol
+    if feats.get("at_symbol") == 1:
+        raw_breakdown.append({"rule": "Credential obfuscation (@ symbol)", "weight": 20})
+        
+    # 13. Path Depth
+    depth = int(feats.get("path_depth", 0))
+    if depth > 3:
+        raw_breakdown.append({"rule": f"Excessive path depth ({depth} levels)", "weight": depth * 2})
+        
+    # 14. Encoded chars
+    if feats.get("encoded_char_presence") == 1:
+        raw_breakdown.append({"rule": "Percent-encoding obfuscation", "weight": 10})
+        
+    # 15. Redirect pattern
+    if feats.get("redirect_pattern") == 1:
+        raw_breakdown.append({"rule": "Redirection pattern (// in path)", "weight": 15})
+        
+    # If no raw features triggered but score > 0, fallback
+    if not raw_breakdown:
+        raw_breakdown.append({"rule": "Model classification probability", "weight": score})
+        
+    # Scale weights to sum exactly to score
+    total_weight = sum(item["weight"] for item in raw_breakdown)
+    
+    breakdown = []
+    accumulated_score = 0
+    for i, item in enumerate(raw_breakdown):
+        if i == len(raw_breakdown) - 1:
+            pts = score - accumulated_score
+        else:
+            pts = int(round((item["weight"] / total_weight) * score))
+            accumulated_score += pts
+        
+        if pts > 0 or score == 0:
+            breakdown.append({
+                "rule": item["rule"],
+                "points": pts
+            })
+            
+    return breakdown
+
 def predict_url(url: str) -> Tuple[str, int, float, Dict[str, Any], List[str], str]:
     """
     Runs model inference on a URL.
@@ -131,6 +230,9 @@ def predict_url(url: str) -> Tuple[str, int, float, Dict[str, Any], List[str], s
     # 5. Explainability
     reasons = generate_explainability_findings(feats)
     
+    # Generate scoring breakdown
+    feats["scoring_breakdown"] = calculate_ml_scoring_breakdown(feats, score)
+    
     # 6. Contextual Recommendation mapping
     from app.services.rule_engine import patterns, constants
     from app.services import recommendation_engine
@@ -157,3 +259,4 @@ def predict_url(url: str) -> Tuple[str, int, float, Dict[str, Any], List[str], s
     )
     
     return status, score, confidence, feats, reasons, recommendation
+

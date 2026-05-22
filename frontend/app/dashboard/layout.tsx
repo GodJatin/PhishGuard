@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Shield, LayoutDashboard, History, LogOut, Loader2, Menu, X } from 'lucide-react';
+import { Shield, LayoutDashboard, History, LogOut, Loader2, Menu, X, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useAuthStore } from '@/stores/auth-store';
@@ -12,15 +12,15 @@ import { Button } from '@/components/ui/button';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, signOut, isLoading } = useAuthStore();
+  const { user, isGuest, signOut, isLoading, deferredPrompt, setDeferredPrompt } = useAuthStore();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (!isLoading && !user && !isGuest) {
       router.push('/login');
     }
-  }, [user, isLoading, router]);
+  }, [user, isGuest, isLoading, router]);
 
   // Close mobile navigation on route change
   useEffect(() => {
@@ -48,6 +48,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.refresh();
   };
 
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`[PWA] Install prompt outcome: ${outcome}`);
+      setDeferredPrompt(null);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -56,10 +65,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  const navItems = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'History', href: '/history', icon: History },
-  ];
+  const navItems = isGuest
+    ? [{ name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }]
+    : [
+        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'History', href: '/history', icon: History },
+      ];
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -92,9 +103,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="hidden sm:block text-sm text-muted-foreground font-mono">
-              {user?.email}
-            </div>
+            {isGuest ? (
+              <div className="hidden sm:inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-500">
+                Guest Session (Temporary History)
+              </div>
+            ) : (
+              <div className="hidden sm:block text-sm text-muted-foreground font-mono">
+                {user?.email}
+              </div>
+            )}
+            
+            {isGuest && (
+              <Link 
+                href="/login" 
+                onClick={() => signOut()}
+                className="hidden sm:inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 h-8 px-3"
+              >
+                Upgrade to SaaS
+              </Link>
+            )}
+
+            {deferredPrompt && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleInstallApp}
+                className="hidden sm:inline-flex items-center gap-1.5 border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 h-8 px-3"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Install App</span>
+              </Button>
+            )}
+
             <Button 
               variant="ghost" 
               size="sm" 
@@ -103,7 +143,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="hidden md:flex text-muted-foreground hover:text-foreground transition-all hover:bg-white/5 active:scale-95"
             >
               {isLoggingOut ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <LogOut className="w-4 h-4 mr-2" />}
-              <span>Log out</span>
+              <span>{isGuest ? 'Exit Guest' : 'Log out'}</span>
             </Button>
             
             {/* Mobile Menu Button */}
@@ -153,9 +193,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
                 <hr className="border-white/10" />
                 <div className="flex flex-col gap-3 px-2">
-                  <div className="text-xs text-muted-foreground font-mono truncate" title={user?.email}>
-                    Logged in: {user?.email}
+                  <div className="text-xs text-muted-foreground font-mono truncate">
+                    {isGuest ? 'Guest Session' : `Logged in: ${user?.email}`}
                   </div>
+                  {deferredPrompt && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleInstallApp}
+                      className="w-full flex items-center justify-center gap-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 h-10"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Install App</span>
+                    </Button>
+                  )}
+                  {isGuest && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        signOut();
+                        router.push('/login');
+                      }}
+                      className="w-full border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 h-10"
+                    >
+                      Upgrade to SaaS
+                    </Button>
+                  )}
                   <Button 
                     variant="outline" 
                     size="sm" 
@@ -164,7 +228,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     className="w-full flex items-center justify-center gap-2 border-white/10 hover:bg-red-500/10 hover:text-red-400 active:scale-98 transition-all h-10"
                   >
                     {isLoggingOut ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
-                    <span>Log out</span>
+                    <span>{isGuest ? 'Exit Guest' : 'Log out'}</span>
                   </Button>
                 </div>
               </div>
