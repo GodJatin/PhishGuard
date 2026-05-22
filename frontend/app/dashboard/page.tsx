@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/stores/auth-store';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from '@/lib/api/axios';
 import { API_ENDPOINTS } from '@/lib/api/endpoints';

@@ -3,7 +3,7 @@
 import { use, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase';
 import axios from '@/lib/api/axios';
 import Link from 'next/link';
 import { 
