@@ -359,7 +359,11 @@ export default function DetailedReportPage({ params }: PageProps) {
           <div className="space-y-6">
             
             {/* Score Summary Panel */}
-            <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
+            <Card className={`border-white/10 bg-black/40 backdrop-blur-xl transition-all duration-500 ${
+              scan.status.toUpperCase() === 'SAFE' ? 'shadow-[0_0_25px_rgba(16,185,129,0.06)]' :
+              scan.status.toUpperCase() === 'SUSPICIOUS' ? 'shadow-[0_0_25px_rgba(245,158,11,0.08)]' :
+              'shadow-[0_0_25px_rgba(239,68,68,0.12)]'
+            }`}>
               <CardHeader className="py-4">
                 <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   Threat score
@@ -399,7 +403,7 @@ export default function DetailedReportPage({ params }: PageProps) {
 
             {/* Technical Details Panel */}
             <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
-              <CardHeader className="py-4 border-b border-white/10">
+              <CardHeader className="py-4 border-b border-white/5">
                 <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <Search className="w-3.5 h-3.5 text-purple-400" />
                   Technical Audit
@@ -407,46 +411,46 @@ export default function DetailedReportPage({ params }: PageProps) {
               </CardHeader>
               <CardContent className="pt-4 pb-4 space-y-3">
                 <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
-                  <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                  <div className="flex justify-between p-2 rounded bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-colors">
                     <span className="text-muted-foreground">HTTPS Security</span>
                     <span className={`font-medium ${scan.technical_details.https ? 'text-green-400' : 'text-red-400 font-bold'}`}>
                       {scan.technical_details.https ? 'Active (HTTPS)' : 'Missing (HTTP)'}
                     </span>
                   </div>
-                  <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                  <div className="flex justify-between p-2 rounded bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-colors">
                     <span className="text-muted-foreground">URL Length</span>
                     <span>{scan.technical_details.url_length} chars</span>
                   </div>
-                  <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                  <div className="flex justify-between p-2 rounded bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-colors">
                     <span className="text-muted-foreground">Subdomains count</span>
                     <span>{scan.technical_details.subdomain_count}</span>
                   </div>
-                  <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                  <div className="flex justify-between p-2 rounded bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-colors">
                     <span className="text-muted-foreground">Contains IP Host</span>
                     <span className={scan.technical_details.contains_ip ? 'text-red-400 font-bold' : ''}>
                       {scan.technical_details.contains_ip ? 'Yes' : 'No'}
                     </span>
                   </div>
-                  <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                  <div className="flex justify-between p-2 rounded bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-colors">
                     <span className="text-muted-foreground">Suspicious TLD</span>
                     <span className={scan.technical_details.suspicious_tld ? 'text-red-400 font-bold' : ''}>
                       {scan.technical_details.suspicious_tld ? 'Yes' : 'No'}
                     </span>
                   </div>
                   {scan.technical_details.path_depth !== undefined && scan.technical_details.path_depth !== null && (
-                    <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                    <div className="flex justify-between p-2 rounded bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-colors">
                       <span className="text-muted-foreground">Path Depth</span>
                       <span>{scan.technical_details.path_depth}</span>
                     </div>
                   )}
                   {scan.technical_details.query_parameter_count !== undefined && scan.technical_details.query_parameter_count !== null && (
-                    <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                    <div className="flex justify-between p-2 rounded bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-colors">
                       <span className="text-muted-foreground">Query Parameters</span>
                       <span>{scan.technical_details.query_parameter_count}</span>
                     </div>
                   )}
                   {scan.technical_details.entropy_score !== undefined && scan.technical_details.entropy_score !== null && (
-                    <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                    <div className="flex justify-between p-2 rounded bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-colors">
                       <span className="text-muted-foreground">URL Entropy</span>
                       <span>{scan.technical_details.entropy_score.toFixed(3)}</span>
                     </div>
@@ -469,14 +473,43 @@ export default function DetailedReportPage({ params }: PageProps) {
             </Card>
 
             {/* Recommendation Panel */}
-            <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 space-y-1.5 animate-in fade-in duration-300">
-              <h4 className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
-                Platform Action Recommendation
-              </h4>
-              <p className="text-xs sm:text-sm text-blue-100/90 leading-relaxed">
-                {scan.recommendation}
-              </p>
-            </div>
+            {(() => {
+              const getRecommendationStyle = (status: string) => {
+                switch (status.toUpperCase()) {
+                  case 'SAFE':
+                    return {
+                      wrapper: 'bg-green-500/10 border-green-500/20 text-green-100/90 shadow-[0_0_15px_rgba(16,185,129,0.05)]',
+                      title: 'text-green-400',
+                    };
+                  case 'SUSPICIOUS':
+                    return {
+                      wrapper: 'bg-yellow-500/10 border-yellow-500/20 text-yellow-100/90 shadow-[0_0_15px_rgba(245,158,11,0.05)]',
+                      title: 'text-yellow-400',
+                    };
+                  case 'DANGEROUS':
+                    return {
+                      wrapper: 'bg-red-500/10 border-red-500/20 text-red-100/90 shadow-[0_0_15px_rgba(239,68,68,0.05)]',
+                      title: 'text-red-400',
+                    };
+                  default:
+                    return {
+                      wrapper: 'bg-blue-500/10 border-blue-500/20 text-blue-100/90 shadow-[0_0_15px_rgba(59,130,246,0.05)]',
+                      title: 'text-blue-400',
+                    };
+                }
+              };
+              const recStyle = getRecommendationStyle(scan.status);
+              return (
+                <div className={`p-4 rounded-lg border space-y-1.5 animate-in fade-in duration-300 ${recStyle.wrapper}`}>
+                  <h4 className={`text-xs font-semibold uppercase tracking-wider ${recStyle.title}`}>
+                    Platform Action Recommendation
+                  </h4>
+                  <p className="text-xs sm:text-sm leading-relaxed">
+                    {scan.recommendation}
+                  </p>
+                </div>
+              );
+            })()}
 
           </div>
         </div>

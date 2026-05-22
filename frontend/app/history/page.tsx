@@ -4,10 +4,35 @@ import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase';
 import { DBScan } from '@/types/scan';
 import Link from 'next/link';
+import { motion, Variants } from 'framer-motion';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { History as HistoryIcon, Loader2, ShieldCheck, AlertTriangle, ShieldAlert, ChevronRight } from 'lucide-react';
 import DashboardLayout from '../dashboard/layout';
+
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.04,
+    },
+  },
+};
+
+const itemVariants: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      type: 'spring',
+      stiffness: 260,
+      damping: 25,
+    },
+  },
+};
 
 export default function HistoryPage() {
   const { data: scans, isLoading, isError } = useQuery<DBScan[]>({
@@ -77,47 +102,63 @@ export default function HistoryPage() {
                 <p>Failed to load history. Please try again.</p>
               </div>
             ) : scans && scans.length > 0 ? (
-              <div className="space-y-3">
+              <motion.div 
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+                className="space-y-3"
+              >
                 {scans.map((scan) => (
-                  <Link 
-                    key={scan.id} 
-                    href={`/scan/${scan.id}`}
-                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg bg-white/5 border border-white/10 cursor-pointer group transition-all duration-300 hover:bg-white/10 hover:border-blue-500/40 hover:shadow-[0_0_15px_rgba(37,99,235,0.12)] hover:-translate-y-0.5 active:translate-y-0"
-                  >
-                    <div className="flex items-center gap-4 w-full sm:w-auto overflow-hidden">
-                      <div className="flex-shrink-0">
-                        {getStatusIcon(scan.status)}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-mono text-sm font-medium text-foreground truncate max-w-[200px] sm:max-w-xs md:max-w-md">
-                          {scan.url}
-                        </p>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                          <span>{new Date(scan.created_at).toLocaleString()}</span>
-                          <span className="w-1 h-1 rounded-full bg-white/20"></span>
-                          <span>Score: {scan.score}/100</span>
+                  <motion.div key={scan.id} variants={itemVariants}>
+                    <Link 
+                      href={`/scan/${scan.id}`}
+                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg bg-white/5 border border-white/10 cursor-pointer group transition-all duration-300 hover:bg-white/10 hover:border-blue-500/40 hover:shadow-[0_0_15px_rgba(37,99,235,0.12)] hover:-translate-y-0.5 active:translate-y-0"
+                    >
+                      <div className="flex items-center gap-4 w-full sm:w-auto overflow-hidden">
+                        <div className="flex-shrink-0">
+                          {getStatusIcon(scan.status)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-mono text-sm font-medium text-foreground truncate max-w-[200px] sm:max-w-xs md:max-w-md">
+                            {scan.url}
+                          </p>
+                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                            <span>{new Date(scan.created_at).toLocaleString()}</span>
+                            <span className="w-1 h-1 rounded-full bg-white/20"></span>
+                            <span>Score: {scan.score}/100</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-4 mt-4 sm:mt-0 w-full sm:w-auto justify-between sm:justify-end">
-                      <div className={`px-3 py-1 text-xs font-bold rounded-full border ${getStatusColor(scan.status)}`}>
-                        {scan.status.toUpperCase()}
+                      <div className="flex items-center gap-4 mt-4 sm:mt-0 w-full sm:w-auto justify-between sm:justify-end">
+                        <div className={`px-3 py-1 text-xs font-bold rounded-full border ${getStatusColor(scan.status)}`}>
+                          {scan.status.toUpperCase()}
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-1 transition-all" />
                       </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-1 transition-all" />
-                    </div>
-                  </Link>
+                    </Link>
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
 
             ) : (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4 border border-white/10">
-                  <HistoryIcon className="w-8 h-8 text-muted-foreground" />
+              <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-white/10 rounded-xl bg-white/[0.01]">
+                <div className="relative mb-3">
+                  <div className="absolute inset-0 bg-blue-500/10 rounded-full blur-xl animate-pulse" />
+                  <HistoryIcon className="w-9 h-9 text-blue-500/60 relative z-10" />
                 </div>
-                <h3 className="text-lg font-medium mb-1">No history found</h3>
-                <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                  You haven't scanned any URLs yet. Head over to the dashboard to start analyzing.
+                <h3 className="text-sm font-semibold text-foreground/90 mb-1">Start your first threat analysis</h3>
+                <p className="text-xs text-muted-foreground/60 max-w-[260px] mb-4">
+                  Run a scan to generate threat intelligence insights and build your history.
                 </p>
+                <Link href="/dashboard">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="border-white/10 hover:bg-white/5 text-xs text-muted-foreground hover:text-foreground font-mono focus-visible:ring-1 focus-visible:ring-white/20 transition-all active:scale-95"
+                  >
+                    Run First Scan
+                  </Button>
+                </Link>
               </div>
             )}
           </CardContent>

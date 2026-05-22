@@ -15,11 +15,13 @@ def analyze_url(url: str) -> ScanResponse:
     status = scoring.classify_score(score)
     
     # 4. Recommendation formatting
-    recommendation = "Safe to proceed."
-    if status == "SUSPICIOUS":
-        recommendation = "Proceed with caution. Verify the sender/source before entering credentials."
-    elif status == "DANGEROUS":
-        recommendation = "Do not visit this URL. It exhibits strong indicators of a phishing or malware attack."
+    from app.services import recommendation_engine
+    recommendation = recommendation_engine.generate_recommendation(
+        status=status,
+        score=score,
+        reasons=reasons,
+        technical_details=raw_details
+    )
 
     if not reasons and status == "SAFE":
         reasons.append("No common threats detected.")

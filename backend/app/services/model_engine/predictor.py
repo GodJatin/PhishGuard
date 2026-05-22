@@ -131,7 +131,29 @@ def predict_url(url: str) -> Tuple[str, int, float, Dict[str, Any], List[str], s
     # 5. Explainability
     reasons = generate_explainability_findings(feats)
     
-    # 6. Recommendation
-    recommendation = get_recommendation(status)
+    # 6. Contextual Recommendation mapping
+    from app.services.rule_engine import patterns, constants
+    from app.services import recommendation_engine
+    
+    keywords_found = patterns.find_suspicious_keywords(normalized_url, constants.SUSPICIOUS_KEYWORDS)
+    tech_details_comp = {
+        "https": feats.get("https") == 1,
+        "contains_ip": feats.get("contains_ip") == 1,
+        "suspicious_keywords_found": keywords_found,
+        "suspicious_keyword_count": int(feats.get("suspicious_keyword_count", 0)),
+        "subdomain_count": int(feats.get("subdomain_count", 0)),
+        "suspicious_tld": feats.get("suspicious_tld") == 1,
+        "redirect_pattern_detected": feats.get("redirect_pattern") == 1,
+        "at_symbol": feats.get("at_symbol") == 1,
+        "encoded_char_presence": feats.get("encoded_char_presence") == 1,
+        "url_length": int(feats.get("url_length", 0))
+    }
+    
+    recommendation = recommendation_engine.generate_recommendation(
+        status=status,
+        score=score,
+        reasons=reasons,
+        technical_details=tech_details_comp
+    )
     
     return status, score, confidence, feats, reasons, recommendation

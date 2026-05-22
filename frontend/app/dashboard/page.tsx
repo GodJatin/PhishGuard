@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { createClient } from '@/lib/supabase';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { motion, AnimatePresence } from 'framer-motion';
 import axios from '@/lib/api/axios';
 import { API_ENDPOINTS } from '@/lib/api/endpoints';
 import { ScanResult } from '@/types/scan';
@@ -129,6 +130,7 @@ export default function DashboardPage() {
   const userName = user?.email?.split('@')[0] || 'User';
   const router = useRouter();
   const queryClient = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
   
   const [url, setUrl] = useState('');
   const [scanType, setScanType] = useState('rule-based');
@@ -295,13 +297,24 @@ export default function DashboardPage() {
     </Card>
   );
 
-  const displayNoDataPlaceholder = () => (
-    <div className="flex flex-col items-center justify-center h-[280px] text-center p-6">
-      <Shield className="w-12 h-12 text-muted-foreground/30 mb-3 animate-pulse" />
-      <h3 className="text-sm font-medium text-muted-foreground/80 mb-1">No Threat Intelligence Available</h3>
-      <p className="text-xs text-muted-foreground/50 max-w-[240px]">
-        Analyze suspicious links using the scanner above to populate metrics.
+  const displayEmptyState = (title: string, description: string, buttonText: string) => (
+    <div className="flex flex-col items-center justify-center h-[280px] text-center p-6 border border-dashed border-white/10 rounded-xl bg-white/[0.01] transition-all hover:bg-white/[0.02]">
+      <div className="relative mb-3">
+        <div className="absolute inset-0 bg-blue-500/10 rounded-full blur-xl animate-pulse" />
+        <Shield className="w-9 h-9 text-blue-500/60 relative z-10" />
+      </div>
+      <h3 className="text-sm font-semibold text-foreground/90 mb-1">{title}</h3>
+      <p className="text-xs text-muted-foreground/60 max-w-[240px] mb-3.5">
+        {description}
       </p>
+      <Button 
+        variant="outline" 
+        size="sm" 
+        onClick={() => inputRef.current?.focus()}
+        className="border-white/10 hover:bg-white/5 text-xs text-muted-foreground hover:text-foreground font-mono focus-visible:ring-1 focus-visible:ring-white/20 transition-all active:scale-95"
+      >
+        {buttonText}
+      </Button>
     </div>
   );
 
@@ -338,19 +351,20 @@ export default function DashboardPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-col lg:flex-row gap-3">
+          <div className="flex flex-col sm:flex-row gap-3 w-full">
             <Input 
+              ref={inputRef}
               placeholder="Enter suspicious link (e.g., http://login-verification-paypal.com)..." 
-              className="flex-1 bg-background/50 border-white/10 focus-visible:ring-blue-500/50 h-12 text-sm font-mono"
+              className="w-full sm:flex-1 bg-background/50 border-white/10 focus-visible:ring-blue-500/50 h-12 text-sm font-mono"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               disabled={scanMutation.isPending}
             />
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
               <select 
                 value={scanType}
                 onChange={(e) => setScanType(e.target.value)}
-                className="h-12 px-4 rounded-lg bg-background/50 border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-xs font-mono"
+                className="w-full sm:w-auto h-12 px-4 rounded-lg bg-background/50 border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-xs font-mono"
                 disabled={scanMutation.isPending}
               >
                 <option value="rule-based">🔍 Rule-Based Engine</option>
@@ -359,7 +373,7 @@ export default function DashboardPage() {
               </select>
               <Button 
                 type="button"
-                className="h-12 px-8 bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-all shadow-[0_0_15px_rgba(37,99,235,0.4)]" 
+                className="w-full sm:w-auto h-12 px-8 bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-all shadow-[0_0_15px_rgba(37,99,235,0.4)] active:scale-95" 
                 onClick={handleScan}
                 disabled={scanMutation.isPending}
               >
@@ -376,11 +390,35 @@ export default function DashboardPage() {
           </div>
 
           {scanMutation.isPending && (
-            <div className="p-3 border border-blue-500/20 bg-blue-500/5 rounded-lg flex items-center gap-3 animate-in fade-in duration-300">
-              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-              <span className="text-xs font-mono text-blue-400 animate-pulse">
-                {currentStages[loadingStageIdx]}
-              </span>
+            <div className="p-4 border border-white/10 bg-black/60 rounded-lg space-y-3 animate-in fade-in duration-300">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <div className="flex items-center gap-2 text-blue-400">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <AnimatePresence mode="wait">
+                    <motion.span
+                      key={loadingStageIdx}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.2 }}
+                      className="inline-block"
+                    >
+                      {currentStages[loadingStageIdx]}
+                    </motion.span>
+                  </AnimatePresence>
+                </div>
+                <span className="text-muted-foreground font-bold">
+                  {Math.round([25, 55, 78, 93][loadingStageIdx] || 93)}%
+                </span>
+              </div>
+              <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden border border-white/5">
+                <motion.div 
+                  className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-400 rounded-full"
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${[25, 55, 78, 93][loadingStageIdx] || 93}%` }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
+                />
+              </div>
             </div>
           )}
         </CardContent>
@@ -536,7 +574,7 @@ export default function DashboardPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-[270px]">
-                {displayNoDataPlaceholder()}
+                {displayEmptyState("Start your first threat analysis", "Run a scan to generate timeline metrics.", "Deploy Scanner")}
               </CardContent>
             </Card>
           )}
@@ -599,7 +637,7 @@ export default function DashboardPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-[270px]">
-                {displayNoDataPlaceholder()}
+                {displayEmptyState("Analyze threat breakout", "Run a scan to generate severity distribution.", "Deploy Scanner")}
               </CardContent>
             </Card>
           )}
@@ -728,7 +766,7 @@ export default function DashboardPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-[240px]">
-                {displayNoDataPlaceholder()}
+                {displayEmptyState("Compare engine statistics", "Run a scan to generate engine comparison indexes.", "Deploy Scanner")}
               </CardContent>
             </Card>
           )}
@@ -753,14 +791,14 @@ export default function DashboardPage() {
             </div>
           ) : recentThreats && recentThreats.length > 0 ? (
             <div className="overflow-x-auto w-full">
-              <table className="w-full text-left text-xs sm:text-sm text-muted-foreground font-mono min-w-[600px] border-collapse">
+              <table className="w-full text-left text-xs sm:text-sm text-muted-foreground font-mono border-collapse">
                 <thead>
                   <tr className="border-b border-white/5 text-muted-foreground/60 text-[10px] uppercase font-bold tracking-wider">
                     <th className="py-3 px-4">Threat Target URL</th>
                     <th className="py-3 px-4">Severity</th>
                     <th className="py-3 px-4">Score</th>
-                    <th className="py-3 px-4">Engine Type</th>
-                    <th className="py-3 px-4">Timestamp</th>
+                    <th className="py-3 px-4 hidden md:table-cell">Engine Type</th>
+                    <th className="py-3 px-4 hidden sm:table-cell">Timestamp</th>
                     <th className="py-3 px-4 text-right">Action</th>
                   </tr>
                 </thead>
@@ -771,7 +809,7 @@ export default function DashboardPage() {
                       onClick={() => router.push(`/scan/${threat.id}`)}
                       className="border-b border-white/5 hover:bg-white/5 cursor-pointer group transition-all duration-300 hover:shadow-[inset_0_0_15px_rgba(239,68,68,0.02)]"
                     >
-                      <td className="py-3.5 px-4 font-medium text-foreground truncate max-w-[250px] font-mono group-hover:text-blue-400 transition-colors" title={threat.url}>
+                      <td className="py-3.5 px-4 font-medium text-foreground truncate max-w-[150px] sm:max-w-[250px] font-mono group-hover:text-blue-400 transition-colors" title={threat.url}>
                         {threat.url}
                       </td>
                       <td className="py-3.5 px-4">
@@ -783,10 +821,10 @@ export default function DashboardPage() {
                         {threat.score}
                         <span className="text-[10px] text-muted-foreground">/100</span>
                       </td>
-                      <td className="py-3.5 px-4 capitalize">
+                      <td className="py-3.5 px-4 capitalize hidden md:table-cell">
                         {threat.scan_type === 'ml' ? 'Pretrained AI' : 'Rule-Based'}
                       </td>
-                      <td className="py-3.5 px-4 text-[10px]">
+                      <td className="py-3.5 px-4 text-[10px] hidden sm:table-cell">
                         {new Date(threat.created_at).toLocaleString()}
                       </td>
                       <td className="py-3.5 px-4 text-right">
@@ -800,12 +838,23 @@ export default function DashboardPage() {
               </table>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <ShieldCheck className="w-10 h-10 text-green-500/20 mb-3" />
-              <h4 className="text-sm font-semibold text-muted-foreground/80 mb-1">No Active Threats Flagged</h4>
-              <p className="text-xs text-muted-foreground/50 max-w-xs mx-auto">
-                No URLs scanned have returned warnings or malicious classifications in your workspace history.
+            <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-white/10 rounded-xl bg-white/[0.01]">
+              <div className="relative mb-3">
+                <div className="absolute inset-0 bg-green-500/10 rounded-full blur-xl animate-pulse" />
+                <ShieldCheck className="w-9 h-9 text-green-500/60 relative z-10" />
+              </div>
+              <h4 className="text-sm font-semibold text-foreground/90 mb-1">Start your threat monitoring</h4>
+              <p className="text-xs text-muted-foreground/60 max-w-xs mx-auto mb-4">
+                Run a scan to generate threat logs and populate active alerts in this console.
               </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => inputRef.current?.focus()}
+                className="border-white/10 hover:bg-white/5 text-xs text-muted-foreground hover:text-foreground font-mono focus-visible:ring-1 focus-visible:ring-white/20 transition-all active:scale-95"
+              >
+                Run First Scan
+              </Button>
             </div>
           )}
         </CardContent>
