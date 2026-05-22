@@ -87,6 +87,14 @@ def generate_pdf_report(scan: dict) -> bytes:
     status = scan.get("status", "unknown").upper()
     score = scan.get("score", 0)
     
+    tech = scan.get("technical_details", {})
+    if isinstance(tech, str):
+        import json
+        try:
+            tech = json.loads(tech)
+        except Exception:
+            tech = {}
+    
     # Status colors
     if status == 'SAFE':
         status_color = colors.HexColor('#10B981')  # Emerald Green
@@ -170,7 +178,7 @@ def generate_pdf_report(scan: dict) -> bytes:
     story.append(url_table)
     story.append(Spacer(1, 14))
     
-    # 3. Threat Score & Severity Banner Side-by-side
+    # 3. Threat Score, Severity Banner & Model Confidence (Dynamic side-by-side)
     score_style = ParagraphStyle(
         'ScoreVal',
         parent=styles['Normal'],
@@ -202,29 +210,79 @@ def generate_pdf_report(scan: dict) -> bytes:
     status_lbl_style = ParagraphStyle(
         'StatusLbl', parent=score_lbl_style
     )
-    
-    score_status_data = [
-        [
+
+    confidence_val = tech.get("confidence")
+    if confidence_val is not None:
+        confidence_pct = float(confidence_val) * 100
+        conf_style = ParagraphStyle(
+            'ConfVal',
+            parent=styles['Normal'],
+            alignment=1, # Center
+            fontName='Helvetica-Bold',
+            fontSize=28,
+            textColor=colors.HexColor('#2563EB'), # Blue
+            leading=32
+        )
+        conf_lbl_style = ParagraphStyle(
+            'ConfLbl',
+            parent=styles['Normal'],
+            alignment=1,
+            fontName='Helvetica-Bold',
+            fontSize=9,
+            textColor=colors.HexColor('#475569'),
+            spaceAfter=4
+        )
+        score_status_data = [
             [
-                Paragraph("THREAT SCORE", score_lbl_style),
-                Paragraph(f"{score}<font size=14 color='#64748B'>/100</font>", score_style)
-            ],
-            [
-                Paragraph("SEVERITY STATUS", status_lbl_style),
-                Paragraph(status, status_val_style)
+                [
+                    Paragraph("THREAT SCORE", score_lbl_style),
+                    Paragraph(f"{score}<font size=14 color='#64748B'>/100</font>", score_style)
+                ],
+                [
+                    Paragraph("SEVERITY STATUS", status_lbl_style),
+                    Paragraph(status, status_val_style)
+                ],
+                [
+                    Paragraph("MODEL CONFIDENCE", conf_lbl_style),
+                    Paragraph(f"{confidence_pct:.1f}<font size=14 color='#64748B'>%</font>", conf_style)
+                ]
             ]
         ]
-    ]
-    score_status_table = Table(score_status_data, colWidths=[3.5*inch, 3.5*inch])
-    score_status_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
-        ('BACKGROUND', (1,0), (1,0), status_bg),
-        ('BOX', (0,0), (0,0), 1, colors.HexColor('#E2E8F0')),
-        ('BOX', (1,0), (1,0), 1, status_color),
-        ('PADDING', (0,0), (-1,-1), 14),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ]))
+        score_status_table = Table(score_status_data, colWidths=[2.33*inch, 2.33*inch, 2.33*inch])
+        score_status_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
+            ('BACKGROUND', (1,0), (1,0), status_bg),
+            ('BACKGROUND', (2,0), (2,0), colors.HexColor('#EFF6FF')), # Light blue
+            ('BOX', (0,0), (0,0), 1, colors.HexColor('#E2E8F0')),
+            ('BOX', (1,0), (1,0), 1, status_color),
+            ('BOX', (2,0), (2,0), 1, colors.HexColor('#BFDBFE')),
+            ('PADDING', (0,0), (-1,-1), 14),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+    else:
+        score_status_data = [
+            [
+                [
+                    Paragraph("THREAT SCORE", score_lbl_style),
+                    Paragraph(f"{score}<font size=14 color='#64748B'>/100</font>", score_style)
+                ],
+                [
+                    Paragraph("SEVERITY STATUS", status_lbl_style),
+                    Paragraph(status, status_val_style)
+                ]
+            ]
+        ]
+        score_status_table = Table(score_status_data, colWidths=[3.5*inch, 3.5*inch])
+        score_status_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
+            ('BACKGROUND', (1,0), (1,0), status_bg),
+            ('BOX', (0,0), (0,0), 1, colors.HexColor('#E2E8F0')),
+            ('BOX', (1,0), (1,0), 1, status_color),
+            ('PADDING', (0,0), (-1,-1), 14),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
     story.append(score_status_table)
     story.append(Spacer(1, 14))
     
@@ -275,13 +333,38 @@ def generate_pdf_report(scan: dict) -> bytes:
             Paragraph(str(tech.get("subdomain_count", 0)), body_style)
         ],
         [
-            Paragraph("<b>Contains IP Address:</b>", body_style),
+            Paragraph("<b>Contains IP Host:</b>", body_style),
             Paragraph("Yes (Suspicious)" if tech.get("contains_ip") else "No", body_style),
             Paragraph("<b>Suspicious TLD:</b>", body_style),
             Paragraph("Yes (High-risk)" if tech.get("suspicious_tld") else "No", body_style)
         ]
     ]
     
+    if tech.get("path_depth") is not None or tech.get("query_parameter_count") is not None or tech.get("entropy_score") is not None:
+        path_val = str(tech.get("path_depth", 0))
+        query_val = str(tech.get("query_parameter_count", 0))
+        entropy_val = f"{float(tech.get('entropy_score', 0.0)):.3f}"
+        
+        tech_grid_data.append([
+            Paragraph("<b>Path Depth:</b>", body_style),
+            Paragraph(path_val, body_style),
+            Paragraph("<b>Query Parameters:</b>", body_style),
+            Paragraph(query_val, body_style)
+        ])
+        tech_grid_data.append([
+            Paragraph("<b>URL Entropy:</b>", body_style),
+            Paragraph(entropy_val, body_style),
+            Paragraph("<b>Redirect Pattern:</b>", body_style),
+            Paragraph("Flagged" if tech.get("redirect_pattern_detected") else "Clean", body_style)
+        ])
+    else:
+        tech_grid_data.append([
+            Paragraph("<b>Redirect Pattern:</b>", body_style),
+            Paragraph("Flagged" if tech.get("redirect_pattern_detected") else "Clean", body_style),
+            Paragraph("", body_style),
+            Paragraph("", body_style)
+        ])
+        
     tech_table = Table(tech_grid_data, colWidths=[1.8*inch, 1.7*inch, 1.8*inch, 1.7*inch])
     tech_table.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),

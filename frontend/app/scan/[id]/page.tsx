@@ -297,7 +297,7 @@ export default function DetailedReportPage({ params }: PageProps) {
           </div>
           <div>
             <span className="block text-muted-foreground text-xs uppercase tracking-wider mb-0.5">Engine Type</span>
-            <span className="capitalize">{scan.scan_type}</span>
+            <span className="capitalize">{scan.scan_type === 'ml' ? 'Pretrained ML' : scan.scan_type}</span>
           </div>
           <div>
             <span className="block text-muted-foreground text-xs uppercase tracking-wider mb-0.5">Scan Time</span>
@@ -374,6 +374,12 @@ export default function DetailedReportPage({ params }: PageProps) {
                   <p className="text-xs text-muted-foreground mt-1.5 uppercase font-semibold tracking-wider">
                     Calculated Threat Index
                   </p>
+                  {scan.confidence !== undefined && scan.confidence !== null && (
+                    <div className="mt-3 px-3 py-1 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      Model Confidence: {(scan.confidence * 100).toFixed(1)}%
+                    </div>
+                  )}
                 </div>
                 
                 {/* Score Bar */}
@@ -427,6 +433,24 @@ export default function DetailedReportPage({ params }: PageProps) {
                       {scan.technical_details.suspicious_tld ? 'Yes' : 'No'}
                     </span>
                   </div>
+                  {scan.technical_details.path_depth !== undefined && scan.technical_details.path_depth !== null && (
+                    <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                      <span className="text-muted-foreground">Path Depth</span>
+                      <span>{scan.technical_details.path_depth}</span>
+                    </div>
+                  )}
+                  {scan.technical_details.query_parameter_count !== undefined && scan.technical_details.query_parameter_count !== null && (
+                    <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                      <span className="text-muted-foreground">Query Parameters</span>
+                      <span>{scan.technical_details.query_parameter_count}</span>
+                    </div>
+                  )}
+                  {scan.technical_details.entropy_score !== undefined && scan.technical_details.entropy_score !== null && (
+                    <div className="flex justify-between p-2 rounded bg-white/5 border border-white/5">
+                      <span className="text-muted-foreground">URL Entropy</span>
+                      <span>{scan.technical_details.entropy_score.toFixed(3)}</span>
+                    </div>
+                  )}
                 </div>
                 
                 {scan.technical_details.suspicious_keywords_found.length > 0 && (

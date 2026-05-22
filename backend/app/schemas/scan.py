@@ -14,6 +14,10 @@ class TechnicalDetails(BaseModel):
     suspicious_keywords_found: List[str]
     suspicious_tld: bool
     redirect_pattern_detected: bool
+    # ML-specific features (optional to keep backwards compatibility)
+    path_depth: Optional[int] = None
+    query_parameter_count: Optional[int] = None
+    entropy_score: Optional[float] = None
 
 class ScanResponse(BaseModel):
     scan_id: str
@@ -25,3 +29,5 @@ class ScanResponse(BaseModel):
     technical_details: TechnicalDetails
     recommendation: str
     timestamp: str
+    # ML-specific confidence (optional)
+    confidence: Optional[float] = None

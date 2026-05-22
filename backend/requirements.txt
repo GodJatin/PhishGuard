@@ -9,3 +9,4 @@ supabase
 sqlalchemy
 psycopg2-binary
 reportlab
+scikit-learn

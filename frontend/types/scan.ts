@@ -11,6 +11,9 @@ export interface TechnicalDetails {
   suspicious_keywords_found: string[];
   suspicious_tld: boolean;
   redirect_pattern_detected: boolean;
+  path_depth?: number;
+  query_parameter_count?: number;
+  entropy_score?: number;
 }
 
 export interface ScanResult {
@@ -23,6 +26,7 @@ export interface ScanResult {
   technical_details: TechnicalDetails;
   recommendation: string;
   timestamp: string;
+  confidence?: number;
 }
 
 // Map the DB schema as well

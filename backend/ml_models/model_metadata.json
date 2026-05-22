@@ -1,0 +1,54 @@
+{
+    "model_type": "RandomForestClassifier",
+    "features": [
+        "url_length",
+        "subdomain_count",
+        "https",
+        "contains_ip",
+        "suspicious_keyword_count",
+        "special_char_count",
+        "digit_count",
+        "hyphen_count",
+        "redirect_pattern",
+        "suspicious_tld",
+        "encoded_char_presence",
+        "at_symbol",
+        "path_depth",
+        "query_parameter_count",
+        "entropy_score"
+    ],
+    "metrics": {
+        "accuracy": 0.9982817869415808,
+        "precision": 1.0,
+        "recall": 0.9966777408637874,
+        "f1_score": 0.9983361064891847
+    },
+    "label_mapping": {
+        "0": "SAFE",
+        "1": "DANGEROUS"
+    },
+    "training_timestamp": "2026-05-22T05:26:43.933025+00:00",
+    "feature_importances": {
+        "suspicious_keyword_count": 0.3402915572981768,
+        "subdomain_count": 0.15308591655763992,
+        "hyphen_count": 0.1479923371991786,
+        "digit_count": 0.06411933555473703,
+        "special_char_count": 0.05953680542593227,
+        "url_length": 0.046914353473065724,
+        "https": 0.046374876986625194,
+        "contains_ip": 0.03645871409092776,
+        "entropy_score": 0.03125775432482838,
+        "suspicious_tld": 0.02926402441067338,
+        "query_parameter_count": 0.012030965240656328,
+        "at_symbol": 0.010772879160720717,
+        "path_depth": 0.0093879751692915,
+        "encoded_char_presence": 0.00684851416803081,
+        "redirect_pattern": 0.005663990939515887
+    },
+    "dataset_info": {
+        "source": "Synthetically balanced high-fidelity simulation dataset combining Top 1M Alexa domains and common PhishTank indicators.",
+        "total_samples": 2907,
+        "benign_samples": 1407,
+        "phishing_samples": 1500
+    }
+}

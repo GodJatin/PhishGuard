@@ -31,6 +31,9 @@ def generate_txt_report(scan: dict) -> str:
     report.append(f"Threat Score: {scan.get('score', 0)}/100")
     report.append(f"Severity    : {status_str}")
     
+    if tech.get("confidence") is not None:
+        report.append(f"Confidence  : {float(tech.get('confidence')) * 100:.1f}%")
+    
     status_desc = ""
     if status_str == "SAFE":
         status_desc = "No phishing indicators detected. The URL appears safe to visit."
@@ -72,6 +75,14 @@ def generate_txt_report(scan: dict) -> str:
         report.append("  • Suspicious Keywords    : None")
         
     report.append(f"  • Redirect Pattern Check : {'Flagged' if tech.get('redirect_pattern_detected') else 'Clean'}")
+    
+    if tech.get("path_depth") is not None:
+        report.append(f"  • Path Segment Depth    : {tech.get('path_depth')}")
+    if tech.get("query_parameter_count") is not None:
+        report.append(f"  • Query Parameter Count : {tech.get('query_parameter_count')}")
+    if tech.get("entropy_score") is not None:
+        report.append(f"  • URL Entropy Score     : {float(tech.get('entropy_score')):.3f}")
+        
     report.append("")
     
     # 4. RECOMMENDATION

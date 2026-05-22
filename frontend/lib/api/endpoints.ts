@@ -5,6 +5,7 @@ export const API_ENDPOINTS = {
   },
   SCAN: {
     RULE_BASED: '/scan/rule-based',
+    ML: '/scan/ml',
     STATUS: (id: string) => `/scan/${id}/status`,
   },
   HISTORY: {

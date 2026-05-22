@@ -22,6 +22,13 @@ const loadingStages = [
   "Generating threat assessment..."
 ];
 
+const mlLoadingStages = [
+  "Extracting URL features...",
+  "Running ML inference...",
+  "Evaluating phishing probability...",
+  "Generating threat assessment..."
+];
+
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const userName = user?.email?.split('@')[0] || 'User';
@@ -34,16 +41,18 @@ export default function DashboardPage() {
 
   const queryClient = useQueryClient();
 
+  const currentStages = scanType === 'pretrained' ? mlLoadingStages : loadingStages;
+
   // Progress fake loading stages
   useEffect(() => {
     let interval: any;
-    if (loadingStageIdx >= 0 && loadingStageIdx < loadingStages.length - 1) {
+    if (loadingStageIdx >= 0 && loadingStageIdx < currentStages.length - 1) {
       interval = setInterval(() => {
         setLoadingStageIdx((prev) => prev + 1);
       }, 800);
     }
     return () => clearInterval(interval);
-  }, [loadingStageIdx]);
+  }, [loadingStageIdx, currentStages]);
 
   const scanMutation = useMutation({
     mutationFn: async (targetUrl: string) => {
@@ -51,9 +60,10 @@ export default function DashboardPage() {
       const { data: { session } } = await supabase.auth.getSession();
       
       const apiURL = process.env.NEXT_PUBLIC_API_URL;
-      const endpoint = API_ENDPOINTS.SCAN.RULE_BASED;
+      const endpoint = scanType === 'pretrained' ? API_ENDPOINTS.SCAN.ML : API_ENDPOINTS.SCAN.RULE_BASED;
       console.log('--- STARTING SCAN REQUEST ---');
       console.log('Target URL:', targetUrl);
+      console.log('Scan Type:', scanType);
       console.log('Computed API URL:', `${apiURL || 'http://localhost:8000/api/v1'}${endpoint}`);
       console.log('Payload:', { url: targetUrl });
       console.log('Session exists:', !!session);
@@ -114,7 +124,7 @@ export default function DashboardPage() {
       toast.error("Please enter a URL to scan");
       return;
     }
-    if (scanType !== 'rule-based') {
+    if (scanType === 'custom') {
       toast("This engine is currently under development.", { icon: '🚧' });
       return;
     }
@@ -203,7 +213,7 @@ export default function DashboardPage() {
               <div className="mt-4 p-4 border border-blue-500/20 bg-blue-500/5 rounded-md flex items-center gap-3">
                 <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
                 <span className="text-sm font-medium text-blue-400 animate-pulse">
-                  {loadingStages[loadingStageIdx]}
+                  {currentStages[loadingStageIdx]}
                 </span>
               </div>
             )}
@@ -223,9 +233,9 @@ export default function DashboardPage() {
               <span>Rule-Based:</span>
               <span className="text-green-400 font-medium">Online</span>
             </div>
-            <div className="flex justify-between items-center opacity-50">
+            <div className="flex justify-between items-center">
               <span>Pretrained AI:</span>
-              <span>Under Dev</span>
+              <span className="text-green-400 font-medium">Online</span>
             </div>
             <div className="flex justify-between items-center opacity-50">
               <span>Custom AI:</span>
