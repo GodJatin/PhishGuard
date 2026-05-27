@@ -8,6 +8,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
+import Logo from '@/components/shared/logo';
+import SplashScreen from '@/components/shared/loaders/splash-screen';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -76,11 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   const navItems = isGuest
@@ -97,8 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <Link href="/dashboard" className="flex items-center gap-2">
-              <Shield className="w-6 h-6 text-blue-500" />
-              <span className="font-bold text-lg tracking-tight hidden sm:inline-block">PhishGuard</span>
+              <Logo size="sm" />
             </Link>
             
             <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
@@ -136,7 +133,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 variant="outline"
                 size="sm"
                 onClick={handleLogout}
-                className="hidden sm:inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 h-8 px-3"
+                className="hidden sm:inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 h-8 px-3"
               >
                 Upgrade to SaaS
               </Button>
@@ -231,7 +228,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       variant="outline"
                       size="sm"
                       onClick={handleLogout}
-                      className="w-full border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 h-10"
+                      className="w-full border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 h-10"
                     >
                       Upgrade to SaaS
                     </Button>
@@ -255,7 +252,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main Content */}
       <main className="flex-1 w-full relative">
-        <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-900/10 to-transparent pointer-events-none" />
+        <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-emerald-950/15 to-transparent pointer-events-none" />
         <motion.div
           key={pathname}
           initial={{ opacity: 0, y: 4 }}

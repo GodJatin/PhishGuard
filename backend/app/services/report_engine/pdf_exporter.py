@@ -121,7 +121,7 @@ def generate_pdf_report(scan: dict) -> bytes:
         parent=styles['Normal'],
         fontName='Helvetica-Bold',
         fontSize=15,
-        textColor=colors.HexColor('#2563EB')
+        textColor=colors.HexColor('#10B981')
     )
     meta_style = ParagraphStyle(
         'MetaText',
@@ -376,7 +376,7 @@ def generate_pdf_report(scan: dict) -> bytes:
             Paragraph(f"{score}<font size=14 color='#64748B'>/100</font>", score_style)
         ]
         if confidence_val is not None:
-            col1_content.append(Paragraph(f"<font size=8 color='#2563EB'><b>Model Conf: {float(confidence_val)*100:.1f}%</b></font>", score_lbl_style))
+            col1_content.append(Paragraph(f"<font size=8 color='#06B6D4'><b>Model Conf: {float(confidence_val)*100:.1f}%</b></font>", score_lbl_style))
             
         col2_content = [
             Paragraph("SEVERITY TIER / STATUS", status_lbl_style),
@@ -395,10 +395,10 @@ def generate_pdf_report(scan: dict) -> bytes:
         score_status_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
             ('BACKGROUND', (1,0), (1,0), status_bg),
-            ('BACKGROUND', (2,0), (2,0), colors.HexColor('#EFF6FF')),
+            ('BACKGROUND', (2,0), (2,0), colors.HexColor('#ECFEFF')),
             ('BOX', (0,0), (0,0), 1, colors.HexColor('#E2E8F0')),
             ('BOX', (1,0), (1,0), 1, status_color),
-            ('BOX', (2,0), (2,0), 1, colors.HexColor('#BFDBFE')),
+            ('BOX', (2,0), (2,0), 1, colors.HexColor('#A5F3FC')),
             ('PADDING', (0,0), (-1,-1), 12),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -458,13 +458,13 @@ def generate_pdf_report(scan: dict) -> bytes:
     if insight_text:
         story.append(Paragraph("Why This Matters (Security Context)", section_title_style))
         insight_data = [
-            [Paragraph("Educational Threat Insight:", ParagraphStyle('InsightTitle', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.HexColor('#7C3AED')))],
-            [Paragraph(safe_xml_escape(insight_text), ParagraphStyle('InsightContent', parent=body_style, fontSize=9, leading=13, textColor=colors.HexColor('#7C3AED')))]
+            [Paragraph("Educational Threat Insight:", ParagraphStyle('InsightTitle', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.HexColor('#059669')))],
+            [Paragraph(safe_xml_escape(insight_text), ParagraphStyle('InsightContent', parent=body_style, fontSize=9, leading=13, textColor=colors.HexColor('#1E293B')))]
         ]
         insight_table = Table(insight_data, colWidths=[7*inch])
         insight_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F5F3FF')),
-            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#DDD6FE')),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#ECFDF5')),
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#A7F3D0')),
             ('PADDING', (0,0), (-1,-1), 8),
             ('ROUNDEDCORNERS', [4, 4, 4, 4]),
         ]))
@@ -592,7 +592,7 @@ def generate_pdf_report(scan: dict) -> bytes:
         parent=styles['Normal'],
         fontSize=10,
         fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#1E3A8A'),
+        textColor=colors.HexColor('#334155'),
         spaceAfter=3
     )
     rec_content_style = ParagraphStyle(
@@ -600,7 +600,7 @@ def generate_pdf_report(scan: dict) -> bytes:
         parent=body_style,
         fontSize=9,
         leading=13,
-        textColor=colors.HexColor('#1E3A8A')
+        textColor=colors.HexColor('#334155')
     )
     
     rec_text = scan.get("recommendation", "No specific recommendation generated.")
@@ -611,8 +611,8 @@ def generate_pdf_report(scan: dict) -> bytes:
     ]
     rec_table = Table(rec_data, colWidths=[7*inch])
     rec_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#EFF6FF')), # Blue-50
-        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#BFDBFE')),
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')), 
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#E2E8F0')),
         ('PADDING', (0,0), (-1,-1), 8),
         ('ROUNDEDCORNERS', [4, 4, 4, 4]),
     ]))

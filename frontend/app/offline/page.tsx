@@ -12,23 +12,23 @@ export default function OfflinePage() {
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4 relative overflow-hidden font-sans">
       {/* Background gradients */}
-      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-blue-950/20 to-transparent pointer-events-none" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(59,130,246,0.12),rgba(255,255,255,0))]" />
+      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-emerald-950/20 to-transparent pointer-events-none" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(16,185,129,0.12),rgba(255,255,255,0))]" />
 
       <Card className="max-w-md w-full border-white/10 bg-black/40 backdrop-blur-xl relative overflow-hidden text-center p-6 shadow-[0_0_50px_rgba(0,0,0,0.6)]">
-        <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-500" />
+        <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-emerald-500 via-emerald-600 to-cyan-500" />
         
         <CardHeader className="pt-6 pb-2">
           <div className="flex justify-center mb-4">
             <div className="relative">
-              <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-xl animate-pulse" />
-              <div className="p-4 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 relative z-10">
+              <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-xl animate-pulse" />
+              <div className="p-4 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 relative z-10">
                 <WifiOff className="w-8 h-8 animate-bounce" />
               </div>
             </div>
           </div>
           <CardTitle className="text-xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
-            <Shield className="w-5 h-5 text-blue-500" /> Connection Terminated
+            <Shield className="w-5 h-5 text-emerald-500" /> Connection Terminated
           </CardTitle>
           <CardDescription className="text-xs font-mono text-muted-foreground uppercase tracking-widest pt-1">
             Network Integrity Compromised
@@ -57,9 +57,9 @@ export default function OfflinePage() {
 
           <Button 
             onClick={handleRetry} 
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-[0_0_15px_rgba(37,99,235,0.4)] active:scale-95 transition-all"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-[#070709] font-bold font-mono border-0 shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.45)] transition-all h-10"
           >
-            <RefreshCw className="w-4 h-4 mr-2 animate-spin-slow" />
+            <RefreshCw className="w-4 h-4 mr-2 animate-spin-slow text-[#070709]" />
             Retry Scan Link
           </Button>
         </CardContent>

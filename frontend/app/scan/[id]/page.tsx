@@ -23,9 +23,9 @@ const getSeverityConfig = (tier: string = 'Low') => {
   switch (tier.toLowerCase()) {
     case 'informational':
       return {
-        bg: 'bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.15)]',
+        bg: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 shadow-[0_0_15px_rgba(6,180,212,0.15)]',
         label: 'Informational',
-        dot: 'bg-blue-400'
+        dot: 'bg-cyan-400'
       };
     case 'low':
       return {
@@ -352,7 +352,7 @@ export default function DetailedReportPage({ params }: PageProps) {
               {isExporting === 'json' ? (
                 <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
               ) : (
-                <Code className="w-3.5 h-3.5 mr-1 text-blue-400" />
+                <Code className="w-3.5 h-3.5 mr-1 text-cyan-400" />
               )}
               JSON
             </Button>
@@ -501,27 +501,27 @@ export default function DetailedReportPage({ params }: PageProps) {
           <div className="space-y-6 animate-in fade-in duration-300">
             {/* Why This Matters Educational Insight Block */}
             {scan.technical_details?.educational_insight && (
-              <div className="p-5 rounded-lg border border-purple-500/20 bg-purple-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(168,85,247,0.05)]">
-                <div className="p-3 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 mt-1 flex-shrink-0">
+              <div className="p-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
+                <div className="p-3 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mt-1 flex-shrink-0">
                   <Brain className="w-6 h-6 animate-pulse" />
                 </div>
                 <div className="space-y-1.5 flex-1 min-w-0">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest font-mono">
+                    <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-widest font-mono">
                       Threat Intel Assessment: {scan.technical_details?.threat_category || 'Generic Phishing'}
                     </h4>
                     {scan.technical_details?.secondary_threat_tags && scan.technical_details.secondary_threat_tags.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {scan.technical_details.secondary_threat_tags.map((tag: string, i: number) => (
-                          <span key={i} className="px-2 py-0.5 text-[9px] rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 font-mono">
+                          <span key={i} className="px-2 py-0.5 text-[9px] rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono">
                             {tag}
                           </span>
                         ))}
                       </div>
                     )}
                   </div>
-                  <h3 className="text-sm font-bold text-purple-200">Why This Matters:</h3>
-                  <p className="text-xs sm:text-sm leading-relaxed text-purple-100/90 font-mono">
+                  <h3 className="text-sm font-bold text-emerald-200">Why This Matters:</h3>
+                  <p className="text-xs sm:text-sm leading-relaxed text-emerald-100/90 font-mono">
                     {scan.technical_details.educational_insight}
                   </p>
                 </div>
@@ -552,10 +552,10 @@ export default function DetailedReportPage({ params }: PageProps) {
 
               {/* ML Card */}
               <Card className="border-white/10 bg-black/40 backdrop-blur-xl relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-[2px] bg-purple-500" />
+                <div className="absolute top-0 left-0 w-full h-[2px] bg-emerald-500" />
                 <CardHeader className="py-4">
                   <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <Brain className="w-3.5 h-3.5 text-purple-400" /> ML Detection Engine
+                    <Brain className="w-3.5 h-3.5 text-emerald-400" /> ML Detection Engine
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pb-5 pt-0 text-center space-y-2">
@@ -568,7 +568,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                       {scan.technical_details.ml_result?.status?.toUpperCase()}
                     </span>
                     {scan.technical_details.ml_result?.confidence !== undefined && (
-                      <span className="px-2 py-0.5 inline-flex items-center rounded-full text-[10px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-400 font-mono">
+                      <span className="px-2 py-0.5 inline-flex items-center rounded-full text-[10px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono">
                         Conf: {((scan.technical_details.ml_result.confidence) * 100).toFixed(1)}%
                       </span>
                     )}
@@ -579,24 +579,24 @@ export default function DetailedReportPage({ params }: PageProps) {
             </div>
 
             {/* Unified risk correlation explanation */}
-            <div className="p-5 rounded-lg border border-blue-500/20 bg-blue-500/10 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(59,130,246,0.1)]">
-              <div className="p-3 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 mt-1 flex-shrink-0">
+            <div className="p-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
+              <div className="p-3 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mt-1 flex-shrink-0">
                 <Info className="w-6 h-6 animate-pulse" />
               </div>
               <div className="space-y-1 flex-1 min-w-0">
-                <h4 className="text-xs font-bold text-blue-400 uppercase tracking-widest font-mono">
+                <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-widest font-mono">
                   Unified Risk Correlation & Consensus Assessment
                 </h4>
                 <p className="text-sm font-bold text-white font-mono">
                   Consensus State: {scan.technical_details?.consensus_level || 'Moderate Confidence'}
                 </p>
-                <p className="text-xs text-blue-100/90 leading-relaxed font-mono">
+                <p className="text-xs text-emerald-100/90 leading-relaxed font-mono">
                   {getConsensusExplanation(scan.technical_details?.consensus_level || 'Moderate Confidence', scan.technical_details?.score_difference || 0)}
                 </p>
-                <p className="text-xs leading-relaxed text-blue-200/90 font-mono pt-1">
+                <p className="text-xs leading-relaxed text-emerald-200/90 font-mono pt-1">
                   💡 Recommendation: {scan.recommendation}
                 </p>
-                <div className="pt-2 text-[10px] text-blue-300 flex flex-wrap gap-x-4 gap-y-1 font-mono uppercase font-bold tracking-wider border-t border-blue-500/10 mt-2">
+                <div className="pt-2 text-[10px] text-emerald-300 flex flex-wrap gap-x-4 gap-y-1 font-mono uppercase font-bold tracking-wider border-t border-emerald-500/10 mt-2">
                   <span>Score difference: {scan.technical_details?.score_difference || 0} points</span>
                   <span>Unified Risk Status: {scan.status}</span>
                 </div>
@@ -608,7 +608,7 @@ export default function DetailedReportPage({ params }: PageProps) {
               <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
                 <CardHeader className="py-4 border-b border-white/5">
                   <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <Activity className="w-3.5 h-3.5 text-blue-400" />
+                    <Activity className="w-3.5 h-3.5 text-cyan-400" />
                     Progressive Scan Journey Timeline
                   </CardTitle>
                 </CardHeader>
@@ -628,8 +628,8 @@ export default function DetailedReportPage({ params }: PageProps) {
                         icon = <AlertTriangle className="w-4 h-4 text-amber-400" />;
                         colorClass = "text-amber-400 bg-amber-500/10 border-amber-500/20";
                       } else if (step.status === 'informational') {
-                        icon = <Info className="w-4 h-4 text-blue-400" />;
-                        colorClass = "text-blue-400 bg-blue-500/10 border-blue-500/20";
+                        icon = <Info className="w-4 h-4 text-cyan-400" />;
+                        colorClass = "text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
                       }
 
                       return (
@@ -647,7 +647,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                                 step.status === 'passed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15' :
                                 (step.status === 'triggered' || step.status === 'critical') ? 'bg-red-500/10 text-red-400 border border-red-500/15' :
                                 step.status === 'warning' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/15' :
-                                'bg-blue-500/10 text-blue-400 border border-blue-500/15'
+                                'bg-cyan-500/10 text-cyan-400 border border-cyan-500/15'
                               }`}>
                                 {step.status}
                               </span>
@@ -708,7 +708,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {scan.technical_details.unique_findings?.ml && scan.technical_details.unique_findings.ml.length > 0 ? (
                         scan.technical_details.unique_findings.ml.map((ind: string, i: number) => (
-                          <span key={i} className="px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400 font-mono text-xs">
+                          <span key={i} className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-xs">
                             {ind}
                           </span>
                         ))
@@ -726,7 +726,7 @@ export default function DetailedReportPage({ params }: PageProps) {
               <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
                 <CardHeader className="border-b border-white/10 py-4">
                   <CardTitle className="text-xs font-bold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
-                    <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
+                    <Brain className="w-4 h-4 text-emerald-400 animate-pulse" />
                     Machine Learning Model Feature Importance
                   </CardTitle>
                   <CardDescription className="text-xs text-muted-foreground/70">
@@ -738,21 +738,21 @@ export default function DetailedReportPage({ params }: PageProps) {
                     <div key={idx} className="space-y-1.5">
                       <div className="flex justify-between items-center text-xs sm:text-sm">
                         <span className="text-foreground/90 font-medium font-mono flex items-center gap-2">
-                          <span className={item.is_active ? "text-purple-400 font-bold" : "text-muted-foreground/50"}>•</span>
+                          <span className={item.is_active ? "text-emerald-400 font-bold" : "text-muted-foreground/50"}>•</span>
                           {item.label}
                           {item.is_active && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold border border-purple-500/20 bg-purple-500/10 text-purple-400 uppercase tracking-widest">
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 uppercase tracking-widest">
                               Triggered
                             </span>
                           )}
                         </span>
-                        <span className="font-bold font-mono text-purple-400">
+                        <span className="font-bold font-mono text-emerald-400">
                           {item.contribution_pct}%
                         </span>
                       </div>
                       <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
                         <div 
-                          className={`h-full rounded-full ${item.is_active ? 'bg-gradient-to-r from-purple-500 to-indigo-500 animate-pulse' : 'bg-purple-900/60'}`}
+                          className={`h-full rounded-full ${item.is_active ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 animate-pulse' : 'bg-emerald-950/40'}`}
                           style={{ width: `${item.contribution_pct}%` }}
                         />
                       </div>
@@ -760,7 +760,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                   ))}
                   
                   {scan.technical_details.ml_interpretation && (
-                    <div className="mt-4 p-3 rounded bg-purple-500/5 border border-purple-500/15 text-xs text-purple-300 font-mono italic">
+                    <div className="mt-4 p-3 rounded bg-emerald-500/5 border border-emerald-500/15 text-xs text-emerald-300 font-mono italic">
                       💡 ML Interpretation: "{scan.technical_details.ml_interpretation}"
                     </div>
                   )}
@@ -799,7 +799,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                 <CardContent className="pt-4 space-y-2.5">
                   {scan.technical_details.ml_result?.reasons && scan.technical_details.ml_result.reasons.length > 0 ? (
                     scan.technical_details.ml_result.reasons.map((r: string, i: number) => (
-                      <div key={i} className="p-2.5 rounded bg-purple-500/5 border border-purple-500/10 text-xs text-foreground/90 font-mono">
+                      <div key={i} className="p-2.5 rounded bg-emerald-500/5 border border-emerald-500/10 text-xs text-foreground/90 font-mono">
                         • {r}
                       </div>
                     ))
@@ -853,7 +853,7 @@ export default function DetailedReportPage({ params }: PageProps) {
             <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
               <CardHeader className="py-4 border-b border-white/5">
                 <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Search className="w-3.5 h-3.5 text-purple-400" />
+                  <Search className="w-3.5 h-3.5 text-emerald-400" />
                   Technical Features Audit
                 </CardTitle>
               </CardHeader>
@@ -916,27 +916,27 @@ export default function DetailedReportPage({ params }: PageProps) {
               
               {/* Why This Matters Educational Insight Block */}
               {scan.technical_details?.educational_insight && (
-                <div className="p-5 rounded-lg border border-purple-500/20 bg-purple-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(168,85,247,0.05)] animate-in fade-in duration-300">
-                  <div className="p-3 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 mt-1 flex-shrink-0">
+                <div className="p-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(16,185,129,0.05)] animate-in fade-in duration-300">
+                  <div className="p-3 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mt-1 flex-shrink-0">
                     <Brain className="w-6 h-6 animate-pulse" />
                   </div>
                   <div className="space-y-1.5 flex-1 min-w-0">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest font-mono">
+                      <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-widest font-mono">
                         Threat Intel Assessment: {scan.technical_details?.threat_category || 'Generic Phishing'}
                       </h4>
                       {scan.technical_details?.secondary_threat_tags && scan.technical_details.secondary_threat_tags.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {scan.technical_details.secondary_threat_tags.map((tag: string, i: number) => (
-                            <span key={i} className="px-2 py-0.5 text-[9px] rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 font-mono">
+                            <span key={i} className="px-2 py-0.5 text-[9px] rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono">
                               {tag}
                             </span>
                           ))}
                         </div>
                       )}
                     </div>
-                    <h3 className="text-sm font-bold text-purple-200">Why This Matters:</h3>
-                    <p className="text-xs sm:text-sm leading-relaxed text-purple-100/90 font-mono">
+                    <h3 className="text-sm font-bold text-emerald-200">Why This Matters:</h3>
+                    <p className="text-xs sm:text-sm leading-relaxed text-emerald-100/90 font-mono">
                       {scan.technical_details.educational_insight}
                     </p>
                   </div>
@@ -1145,14 +1145,14 @@ export default function DetailedReportPage({ params }: PageProps) {
                       Calculated Threat Index
                     </p>
                     {scan.confidence !== undefined && scan.confidence !== null && (
-                      <div className="mt-3 px-3 py-1 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      <div className="mt-3 px-3 py-1 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                         Model Confidence: {(scan.confidence * 100).toFixed(1)}%
                       </div>
                     )}
                     {scan.technical_details?.consensus_level && (
-                      <div className="mt-2 px-3 py-1 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-purple-500/10 border border-purple-500/20 text-purple-400">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                      <div className="mt-2 px-3 py-1 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                         Consensus: {scan.technical_details.consensus_level}
                       </div>
                     )}
@@ -1177,7 +1177,7 @@ export default function DetailedReportPage({ params }: PageProps) {
               <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
                 <CardHeader className="py-4 border-b border-white/5">
                   <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 flex-mono">
-                    <Search className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
+                    <Search className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
                     Technical Audit
                   </CardTitle>
                 </CardHeader>
@@ -1265,8 +1265,8 @@ export default function DetailedReportPage({ params }: PageProps) {
                       };
                     default:
                       return {
-                        wrapper: 'bg-blue-500/10 border-blue-500/20 text-blue-100/90 shadow-[0_0_15px_rgba(59,130,246,0.05)]',
-                        title: 'text-blue-400',
+                        wrapper: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-100/90 shadow-[0_0_15px_rgba(16,185,129,0.05)]',
+                        title: 'text-emerald-400',
                       };
                   }
                 };

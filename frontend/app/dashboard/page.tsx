@@ -19,7 +19,7 @@ import {
   ShieldAlert, Search, Activity, Clock, ShieldCheck, 
   AlertTriangle, Loader2, Info, Brain, Cpu, TrendingUp,
   PieChart as PieIcon, BarChart3, ChevronRight, Terminal, ExternalLink,
-  Target, Shield, Eye
+  Target, Shield, Eye, CheckCircle2
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { 
@@ -145,18 +145,14 @@ export default function DashboardPage() {
   
   const [url, setUrl] = useState('');
   const [scanType, setScanType] = useState('rule-based');
-  const [loadingStageIdx, setLoadingStageIdx] = useState(0);
+  const [isScanning, setIsScanning] = useState(false);
+  const [pipelineActiveStep, setPipelineActiveStep] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [guestHistory, setGuestHistory] = useState<ScanResult[]>([]);
   const [scanTakingLong, setScanTakingLong] = useState(false);
   const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // AbortController ref — cancels the in-flight scan request when user rescans or navigates away
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  const currentStages = 
-    scanType === 'pretrained' ? mlLoadingStages : 
-    scanType === 'comparison' ? comparisonLoadingStages : 
-    loadingStages;
 
   // Prevent SSR/hydration issues with Recharts
   useEffect(() => {
@@ -171,16 +167,21 @@ export default function DashboardPage() {
     }
   }, [isGuest]);
 
-  // Progress fake loading stages
+  // Progress pipeline steps
   useEffect(() => {
     let interval: any;
-    if (loadingStageIdx >= 0 && loadingStageIdx < currentStages.length - 1) {
+    if (isScanning) {
       interval = setInterval(() => {
-        setLoadingStageIdx((prev) => prev + 1);
-      }, 800);
+        setPipelineActiveStep((prev) => {
+          if (prev < 5) return prev + 1; // Cap at Consensus Core Correlation (index 5)
+          return prev;
+        });
+      }, 400);
+    } else {
+      setPipelineActiveStep(0);
     }
     return () => clearInterval(interval);
-  }, [loadingStageIdx, currentStages]);
+  }, [isScanning]);
 
   // React Query Caching for analytics data
   const { data: overview, isLoading: isOverviewLoading, isError: isOverviewError } = useQuery<OverviewStats>({
@@ -269,7 +270,8 @@ export default function DashboardPage() {
       return response.data as ScanResult;
     },
     onMutate: () => {
-      setLoadingStageIdx(0);
+      setIsScanning(true);
+      setPipelineActiveStep(0);
       setScanTakingLong(false);
       // Show "taking longer than expected" message after 10s
       scanTimeoutRef.current = setTimeout(() => {
@@ -277,41 +279,49 @@ export default function DashboardPage() {
       }, 10000);
     },
     onSuccess: (data) => {
-      // Clear abort controller and long-scan timeout
-      abortControllerRef.current = null;
-      if (scanTimeoutRef.current) {
-        clearTimeout(scanTimeoutRef.current);
-        scanTimeoutRef.current = null;
-      }
-      setScanTakingLong(false);
-
-      if (!data || !data.scan_id) {
-        toast.error('API returned an invalid response format.');
-        return;
-      }
+      // Set to final completion step (Final Assessment)
+      setPipelineActiveStep(6);
       
-      if (isGuest) {
-        // Read existing scans safely from localStorage
-        const existingScans = safeParseJSON<ScanResult[]>('phishguard_guest_scans', []);
-        const updatedScans = [data, ...existingScans].slice(0, 10); // Keep max 10
-        safeSetJSON('phishguard_guest_scans', updatedScans);
-        setGuestHistory(updatedScans);
+      // Delay navigation slightly so user sees the 100% check completion
+      setTimeout(() => {
+        setIsScanning(false);
+        // Clear abort controller and long-scan timeout
+        abortControllerRef.current = null;
+        if (scanTimeoutRef.current) {
+          clearTimeout(scanTimeoutRef.current);
+          scanTimeoutRef.current = null;
+        }
+        setScanTakingLong(false);
+
+        if (!data || !data.scan_id) {
+          toast.error('API returned an invalid response format.');
+          return;
+        }
         
-        toast.success('Scan complete (saved locally)');
-        router.push(`/scan/${data.scan_id}?guest=true`);
-      } else {
-        // Invalidate all query caches to trigger dashboard updates immediately
-        queryClient.invalidateQueries({ queryKey: ['history'] });
-        queryClient.invalidateQueries({ queryKey: ['analytics-overview'] });
-        queryClient.invalidateQueries({ queryKey: ['analytics-trends'] });
-        queryClient.invalidateQueries({ queryKey: ['analytics-keywords'] });
-        queryClient.invalidateQueries({ queryKey: ['analytics-recent-threats'] });
-        
-        toast.success('Scan complete');
-        router.push(`/scan/${data.scan_id}`);
-      }
+        if (isGuest) {
+          // Read existing scans safely from localStorage
+          const existingScans = safeParseJSON<ScanResult[]>('phishguard_guest_scans', []);
+          const updatedScans = [data, ...existingScans].slice(0, 10); // Keep max 10
+          safeSetJSON('phishguard_guest_scans', updatedScans);
+          setGuestHistory(updatedScans);
+          
+          toast.success('Scan complete (saved locally)');
+          router.push(`/scan/${data.scan_id}?guest=true`);
+        } else {
+          // Invalidate all query caches to trigger dashboard updates immediately
+          queryClient.invalidateQueries({ queryKey: ['history'] });
+          queryClient.invalidateQueries({ queryKey: ['analytics-overview'] });
+          queryClient.invalidateQueries({ queryKey: ['analytics-trends'] });
+          queryClient.invalidateQueries({ queryKey: ['analytics-keywords'] });
+          queryClient.invalidateQueries({ queryKey: ['analytics-recent-threats'] });
+          
+          toast.success('Scan complete');
+          router.push(`/scan/${data.scan_id}`);
+        }
+      }, 600);
     },
     onError: (error: any) => {
+      setIsScanning(false);
       // Clear abort controller and long-scan timeout
       abortControllerRef.current = null;
       if (scanTimeoutRef.current) {
@@ -477,8 +487,8 @@ export default function DashboardPage() {
   const displayEmptyState = (title: string, description: string, buttonText: string) => (
     <div className="flex flex-col items-center justify-center h-[280px] text-center p-6 border border-dashed border-white/10 rounded-xl bg-white/[0.01] transition-all hover:bg-white/[0.02]">
       <div className="relative mb-3">
-        <div className="absolute inset-0 bg-blue-500/10 rounded-full blur-xl animate-pulse" />
-        <Shield className="w-9 h-9 text-blue-500/60 relative z-10" />
+        <div className="absolute inset-0 bg-emerald-500/10 rounded-full blur-xl animate-pulse" />
+        <Shield className="w-9 h-9 text-emerald-500/60 relative z-10" />
       </div>
       <h3 className="text-sm font-semibold text-foreground/90 mb-1">{title}</h3>
       <p className="text-xs text-muted-foreground/60 max-w-[240px] mb-3.5">
@@ -501,7 +511,7 @@ export default function DashboardPage() {
       {/* Premium Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2 text-blue-500 text-xs font-mono font-bold uppercase tracking-widest">
+          <div className="flex items-center gap-2 text-emerald-500 text-xs font-mono font-bold uppercase tracking-widest">
             <Terminal className="w-3.5 h-3.5" /> Security Operations Center
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
@@ -549,10 +559,10 @@ export default function DashboardPage() {
 
       {/* QUICK SCAN CONSOLE */}
       <Card className="border-white/10 bg-black/40 backdrop-blur-xl relative overflow-hidden group shadow-[0_0_30px_rgba(0,0,0,0.5)]">
-        <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-500"></div>
+        <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-emerald-500 via-emerald-600 to-cyan-500"></div>
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Search className="w-4 h-4 text-blue-400 animate-pulse" />
+            <Search className="w-4 h-4 text-emerald-400 animate-pulse" />
             Threat Scanner Console
           </CardTitle>
           <CardDescription>
@@ -564,7 +574,7 @@ export default function DashboardPage() {
             <Input 
               ref={inputRef}
               placeholder="Enter suspicious link (e.g., http://login-verification-paypal.com)..." 
-              className="w-full sm:flex-1 bg-background/50 border-white/10 focus-visible:ring-blue-500/50 h-12 text-sm font-mono"
+              className="w-full sm:flex-1 bg-background/50 border-white/10 focus-visible:ring-emerald-500/50 h-12 text-sm font-mono"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -576,7 +586,7 @@ export default function DashboardPage() {
               <select 
                 value={scanType}
                 onChange={(e) => setScanType(e.target.value)}
-                className="w-full sm:w-auto h-12 px-4 rounded-lg bg-background/50 border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-xs font-mono"
+                className="w-full sm:w-auto h-12 px-4 rounded-lg bg-background/50 border border-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-xs font-mono"
                 disabled={scanMutation.isPending}
               >
                 <option value="rule-based">🔍 Rule-Based Engine</option>
@@ -586,13 +596,13 @@ export default function DashboardPage() {
               </select>
               <Button 
                 type="button"
-                className="w-full sm:w-auto h-12 px-8 bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-all shadow-[0_0_15px_rgba(37,99,235,0.4)] active:scale-95" 
+                className="w-full sm:w-auto h-12 px-8 bg-emerald-600 hover:bg-emerald-700 font-bold text-[#08090b] transition-all shadow-[0_0_15px_rgba(16,185,129,0.35)] active:scale-95 cursor-pointer font-mono" 
                 onClick={handleScan}
                 disabled={scanMutation.isPending}
               >
                 {scanMutation.isPending ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin text-[#08090b]" />
                     Scanning
                   </>
                 ) : (
@@ -603,41 +613,79 @@ export default function DashboardPage() {
           </div>
 
           {scanMutation.isPending && (
-            <div className="p-4 border border-white/10 bg-black/60 rounded-lg space-y-3 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between text-xs font-mono">
-                <div className="flex items-center gap-2 text-blue-400">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <AnimatePresence mode="wait">
-                    <motion.span
-                      key={loadingStageIdx}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -5 }}
-                      transition={{ duration: 0.2 }}
-                      className="inline-block"
-                    >
-                      {currentStages[loadingStageIdx]}
-                    </motion.span>
-                  </AnimatePresence>
+            <div className="p-5 border border-white/10 bg-[#111215]/80 rounded-xl space-y-4 animate-in fade-in duration-300">
+              <div className="flex items-center justify-between text-xs font-mono border-b border-white/5 pb-2">
+                <div className="flex items-center gap-2 text-emerald-400 font-bold">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                  <span>INTELLIGENCE SCAN PIPELINE IN PROGRESS</span>
                 </div>
-                <span className="text-muted-foreground font-bold">
-                  {Math.round([25, 55, 78, 93][loadingStageIdx] || 93)}%
+                <span className="text-emerald-400 font-bold">
+                  {Math.round((pipelineActiveStep + 1) * 14.2)}%
                 </span>
               </div>
-              <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden border border-white/5">
-                <motion.div 
-                  className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-400 rounded-full"
-                  initial={{ width: '0%' }}
-                  animate={{ width: `${[25, 55, 78, 93][loadingStageIdx] || 93}%` }}
-                  transition={{ duration: 0.6, ease: "easeOut" }}
-                />
+              
+              {/* Vertical Pipeline Stepper */}
+              <div className="grid grid-cols-1 gap-2.5 pt-2">
+                {[
+                  { step: 0, label: "Whitelist Bypass Query", sub: "Checking database of pre-verified safe corporate hosts" },
+                  { step: 1, label: "Blacklist Signature Verification", sub: "Matching URL tokens against 300+ known threat feeds" },
+                  { step: 2, label: "Brand Spoofing Analysis", sub: "Running Levenshtein distance and character homoglyph checks" },
+                  { step: 3, label: "Heuristic Structural Inspection", sub: "Scanning directory depth, query parameters, entropy, and ports" },
+                  { step: 4, label: "Random Forest ML Inference", sub: "Evaluating 15 statistical layout dimensions in real-time" },
+                  { step: 5, label: "Consensus Model Correlation", sub: "Resolving weight alignment between heuristic and statistical cores" },
+                  { step: 6, label: "Final Assessment & Report Stamp", sub: "Mapping threat categories, confidence index, and exports" }
+                ].map((s) => {
+                  const isDone = pipelineActiveStep > s.step;
+                  const isActive = pipelineActiveStep === s.step;
+                  
+                  return (
+                    <div 
+                      key={s.step} 
+                      className={`flex items-start gap-3 p-2 rounded-lg border transition-all duration-300 ${
+                        isActive ? 'bg-emerald-500/5 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.05)]' : 
+                        isDone ? 'bg-white/[0.01] border-transparent' : 'opacity-40 border-transparent'
+                      }`}
+                    >
+                      <div className="mt-0.5 flex-shrink-0">
+                        {isDone ? (
+                          <div className="w-4 h-4 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                          </div>
+                        ) : isActive ? (
+                          <div className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-emerald-400 animate-pulse">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          </div>
+                        ) : (
+                          <div className="w-4 h-4 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-neutral-600 font-mono text-[9px]">
+                            {s.step + 1}
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className={`text-xs font-mono font-bold ${isActive ? 'text-emerald-400' : isDone ? 'text-neutral-300' : 'text-neutral-500'}`}>
+                          {s.label}
+                        </p>
+                        {isActive && (
+                          <motion.p 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="text-[10px] text-neutral-400 font-mono leading-none mt-0.5"
+                          >
+                            {s.sub}
+                          </motion.p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
+
               {scanTakingLong && (
-                <div className="flex items-start gap-2 text-xs text-amber-400/90 font-mono bg-amber-500/5 border border-amber-500/20 rounded-md px-3 py-2">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse mt-1 shrink-0" />
+                <div className="flex items-start gap-2 text-xs text-amber-500 font-mono bg-amber-500/5 border border-amber-500/20 rounded-lg px-3.5 py-2.5 mt-2">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse mt-1 shrink-0" />
                   <span>
-                    <span className="font-semibold text-amber-400">Server is waking up.</span>
-                    {' '}Free-tier hosting can take 20–40 seconds on a cold start. Hang tight — your scan is queued.
+                    <span className="font-bold">Server is waking up.</span>
+                    {' '}Render's free tier spins down database processes after inactivity. Waking threat database container (usually 20–40 seconds). Hang tight.
                   </span>
                 </div>
               )}
@@ -665,10 +713,10 @@ export default function DashboardPage() {
         ) : (
           <>
             {/* Total Scans */}
-            <Card className="border-white/10 bg-black/40 hover:bg-black/60 backdrop-blur-xl transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_0_15px_rgba(59,130,246,0.1)] group cursor-default">
+            <Card className="border-white/10 bg-black/40 hover:bg-black/60 backdrop-blur-xl transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_0_15px_rgba(6,182,212,0.1)] group cursor-default">
               <CardHeader className="pb-1">
-                <CardDescription className="text-xs flex items-center gap-1.5 font-medium text-muted-foreground group-hover:text-blue-400 transition-colors">
-                  <Activity className="w-3.5 h-3.5 text-blue-400" /> TOTAL SCANS
+                <CardDescription className="text-xs flex items-center gap-1.5 font-medium text-muted-foreground group-hover:text-cyan-400 transition-colors">
+                  <Activity className="w-3.5 h-3.5 text-cyan-400" /> TOTAL SCANS
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -727,14 +775,14 @@ export default function DashboardPage() {
             </Card>
 
             {/* ML Detections */}
-            <Card className="border-white/10 bg-black/40 hover:bg-black/60 backdrop-blur-xl transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_0_15px_rgba(139,92,246,0.1)] group cursor-default">
+            <Card className="border-white/10 bg-black/40 hover:bg-black/60 backdrop-blur-xl transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_0_15px_rgba(16,185,129,0.1)] group cursor-default">
               <CardHeader className="pb-1">
-                <CardDescription className="text-xs flex items-center gap-1.5 font-medium text-muted-foreground group-hover:text-purple-400 transition-colors">
-                  <Brain className="w-3.5 h-3.5 text-purple-400" /> ML SCANS
+                <CardDescription className="text-xs flex items-center gap-1.5 font-medium text-muted-foreground group-hover:text-emerald-400 transition-colors">
+                  <Brain className="w-3.5 h-3.5 text-emerald-400" /> ML SCANS
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold tracking-tight font-mono text-purple-400">
+                <div className="text-2xl font-bold tracking-tight font-mono text-emerald-400">
                   <AnimatedCounter value={activeOverview.ml_scan_count} />
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1">
@@ -792,7 +840,7 @@ export default function DashboardPage() {
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-blue-400" />
+                      <TrendingUp className="w-4 h-4 text-cyan-400" />
                       Scan Activity Timeline
                     </CardTitle>
                     <CardDescription>Daily threat scanning statistics for the past 7 days.</CardDescription>
@@ -802,8 +850,8 @@ export default function DashboardPage() {
                       <AreaChart data={trends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <defs>
                           <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
-                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                           </linearGradient>
                           <linearGradient id="colorDangerous" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2}/>
@@ -814,7 +862,7 @@ export default function DashboardPage() {
                         <XAxis dataKey="date" stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} />
                         <YAxis stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} allowDecimals={false} />
                         <Tooltip content={<CustomTooltip />} />
-                        <Area type="monotone" dataKey="total" name="Total Scans" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" />
+                        <Area type="monotone" dataKey="total" name="Total Scans" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" />
                         <Area type="monotone" dataKey="dangerous" name="Dangerous Scans" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorDangerous)" />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -824,7 +872,7 @@ export default function DashboardPage() {
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
                   <CardHeader>
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-blue-400" /> Scan Activity Timeline
+                      <TrendingUp className="w-4 h-4 text-cyan-400" /> Scan Activity Timeline
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="h-[270px]">
@@ -857,7 +905,7 @@ export default function DashboardPage() {
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px] flex flex-col justify-between">
                   <CardHeader className="pb-0">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-purple-400" />
+                      <BarChart3 className="w-4 h-4 text-cyan-400" />
                       Threat Severity Overview
                     </CardTitle>
                     <CardDescription>Visual breakout of URL threat severity tiers.</CardDescription>
@@ -866,7 +914,7 @@ export default function DashboardPage() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart 
                         data={[
-                          { name: 'Info', count: activeOverview.severity_tier_counts?.Informational || 0, fill: '#3b82f6' },
+                          { name: 'Info', count: activeOverview.severity_tier_counts?.Informational || 0, fill: '#06b6d4' },
                           { name: 'Low', count: activeOverview.severity_tier_counts?.Low || 0, fill: '#10b981' },
                           { name: 'Medium', count: activeOverview.severity_tier_counts?.Medium || 0, fill: '#f59e0b' },
                           { name: 'High', count: activeOverview.severity_tier_counts?.High || 0, fill: '#f97316' },
@@ -879,7 +927,7 @@ export default function DashboardPage() {
                         <YAxis stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} allowDecimals={false} />
                         <Tooltip content={<CustomTooltip />} />
                         <Bar dataKey="count" name="Threats" radius={[4, 4, 0, 0]}>
-                          <Cell fill="#3b82f6" />
+                          <Cell fill="#06b6d4" />
                           <Cell fill="#10b981" />
                           <Cell fill="#f59e0b" />
                           <Cell fill="#f97316" />
@@ -896,7 +944,7 @@ export default function DashboardPage() {
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
                   <CardHeader>
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-purple-400" /> Threat Severity Overview
+                      <BarChart3 className="w-4 h-4 text-cyan-400" /> Threat Severity Overview
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="h-[270px]">
@@ -936,14 +984,14 @@ export default function DashboardPage() {
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
                   <CardHeader className="pb-1">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
+                      <Brain className="w-4 h-4 text-cyan-400 animate-pulse" />
                       Insights Summary
                     </CardTitle>
                     <CardDescription className="text-[11px]">Actionable heuristics from user ledger.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2.5 my-auto">
                     <div className="p-2 bg-white/5 border border-white/5 rounded flex items-center gap-2">
-                      <div className="p-1 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                      <div className="p-1 rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
                         <Target className="w-3.5 h-3.5" />
                       </div>
                       <div className="min-w-0 flex-1 flex justify-between items-center text-xs">
@@ -967,7 +1015,7 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="p-2 bg-white/5 border border-white/5 rounded flex items-center gap-2">
-                      <div className="p-1 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                      <div className="p-1 rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
                         <TrendingUp className="w-3.5 h-3.5" />
                       </div>
                       <div className="min-w-0 flex-1 flex justify-between items-center text-xs">
@@ -1021,7 +1069,7 @@ export default function DashboardPage() {
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
                   <CardHeader className="pb-1">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-purple-400 animate-pulse" />
+                      <Shield className="w-4 h-4 text-cyan-400 animate-pulse" />
                       Threat Vectors & Brands
                     </CardTitle>
                     <CardDescription className="text-[11px]">Primary vectors and targets flagged.</CardDescription>
@@ -1038,7 +1086,7 @@ export default function DashboardPage() {
                             .map(([category, count]) => (
                               <div key={category} className="flex items-center justify-between p-1.5 rounded bg-white/5 border border-white/5 text-[11px] font-mono">
                                 <span className="text-foreground truncate max-w-[140px]">{category}</span>
-                                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
                                   {count}
                                 </span>
                               </div>
@@ -1145,10 +1193,10 @@ export default function DashboardPage() {
         </>
       ) : (
         <Card className="border-white/10 bg-black/40 backdrop-blur-xl relative overflow-hidden p-8 text-center flex flex-col items-center justify-center space-y-6 shadow-[0_0_50px_rgba(0,0,0,0.6)] rounded-xl min-h-[350px]">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-cyan-500/5" />
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 via-cyan-500/5 to-emerald-500/5" />
           <div className="relative">
-            <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-2xl animate-pulse" />
-            <div className="p-4 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 relative z-10">
+            <div className="absolute inset-0 bg-emerald-500/10 rounded-full blur-2xl animate-pulse" />
+            <div className="p-4 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 relative z-10">
               <ShieldAlert className="w-10 h-10" />
             </div>
           </div>
@@ -1164,7 +1212,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex gap-4 relative z-10">
             <Link href="/login">
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-[0_0_15px_rgba(37,99,235,0.4)] active:scale-95">
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-[#070709] font-bold font-mono shadow-[0_0_15px_rgba(16,185,129,0.3)] active:scale-95 border-0">
                 Register / Login
               </Button>
             </Link>
@@ -1174,22 +1222,40 @@ export default function DashboardPage() {
 
       {/* RECENT DANGEROUS/SUSPICIOUS SCANS */}
       <Card className="border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl">
-        <CardHeader className="border-b border-white/10 pb-4">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
-            {isGuest ? "Recent Temporary Scans" : "Recent Threats Detected"}
-          </CardTitle>
-          <CardDescription>
-            {isGuest 
-              ? "Your temporary scan ledger in this session (retains up to 10 scans in browser memory)."
-              : "Chronological ledger of medium and high-threat analyses flagged in your workspace."
-            }
-          </CardDescription>
+        <CardHeader className="border-b border-white/10 pb-4 flex flex-row items-center justify-between gap-4 space-y-0">
+          <div className="space-y-1">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-red-500 animate-pulse" />
+              {isGuest ? "Recent Temporary Scans" : "Recent Threats Detected"}
+            </CardTitle>
+            <CardDescription>
+              {isGuest 
+                ? "Your temporary temporary scan ledger in this session (retains up to 10 scans in browser memory)."
+                : "Chronological ledger of medium and high-threat analyses flagged in your workspace."
+              }
+            </CardDescription>
+          </div>
+          {isGuest && activeRecentThreats && activeRecentThreats.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (confirm("Are you sure you want to clear your local guest scans history?")) {
+                  safeSetJSON('phishguard_guest_scans', []);
+                  setGuestHistory([]);
+                  toast.success("Guest history cleared");
+                }
+              }}
+              className="border-red-500/25 bg-red-500/5 text-red-400 hover:bg-red-500/10 hover:text-red-300 text-xs h-8 px-2.5 font-mono cursor-pointer shrink-0"
+            >
+              Clear Local History
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="pt-4 px-0 sm:px-6">
           {isRecentThreatsActiveLoading ? (
             <div className="flex flex-col items-center justify-center py-10 space-y-2">
-              <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+              <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
               <p className="text-xs text-muted-foreground font-mono">Querying threat tables...</p>
             </div>
           ) : activeRecentThreats && activeRecentThreats.length > 0 ? (
@@ -1212,7 +1278,7 @@ export default function DashboardPage() {
                       onClick={() => router.push(`/scan/${threat.id}${isGuest ? '?guest=true' : ''}`)}
                       className="border-b border-white/5 hover:bg-white/5 cursor-pointer group transition-all duration-300 hover:shadow-[inset_0_0_15px_rgba(239,68,68,0.02)]"
                     >
-                      <td className="py-3.5 px-4 font-medium text-foreground truncate max-w-[150px] sm:max-w-[250px] font-mono group-hover:text-blue-400 transition-colors" title={threat.url}>
+                      <td className="py-3.5 px-4 font-medium text-foreground truncate max-w-[150px] sm:max-w-[250px] font-mono group-hover:text-emerald-400 transition-colors" title={threat.url}>
                         {threat.url}
                       </td>
                       <td className="py-3.5 px-4">
@@ -1231,7 +1297,7 @@ export default function DashboardPage() {
                         {new Date(threat.created_at).toLocaleString()}
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        <div className="inline-flex items-center gap-1 text-xs text-blue-500 group-hover:text-blue-400 font-bold">
+                        <div className="inline-flex items-center gap-1 text-xs text-emerald-500 group-hover:text-emerald-400 font-bold">
                           Audit <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                         </div>
                       </td>

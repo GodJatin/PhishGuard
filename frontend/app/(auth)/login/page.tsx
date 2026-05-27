@@ -6,15 +6,15 @@ import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Shield, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth-store';
+import Logo from '@/components/shared/logo';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Please enter a valid email address.' }),
@@ -69,17 +69,15 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-background relative overflow-hidden">
-      {/* Background elements */}
-      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-purple-600/10 rounded-full blur-[120px] pointer-events-none" />
+      {/* Mesh Background Grid */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#111215_1px,transparent_1px),linear-gradient(to_bottom,#111215_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none opacity-45" />
+      <div className="absolute top-[-10%] left-[-10%] w-[400px] h-[400px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none" />
       
       <div className="w-full max-w-md z-10">
         <div className="flex flex-col items-center mb-8">
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="p-2 bg-blue-500/10 rounded-xl group-hover:bg-blue-500/20 transition-colors">
-              <Shield className="w-8 h-8 text-blue-500" />
-            </div>
-            <span className="font-bold text-2xl tracking-tight">PhishGuard</span>
+            <Logo size="lg" />
           </Link>
         </div>
 
@@ -104,7 +102,7 @@ export default function LoginPage() {
                           placeholder="name@example.com" 
                           type="email" 
                           autoComplete="email"
-                          className="bg-background/50 border-white/10 focus-visible:ring-blue-500/50" 
+                          className="bg-background/50 border-white/10 focus-visible:ring-emerald-500/50" 
                           {...field} 
                         />
                       </FormControl>
@@ -129,7 +127,7 @@ export default function LoginPage() {
                             type={showPassword ? "text" : "password"}
                             autoComplete="current-password"
                             placeholder="••••••••"
-                            className="bg-background/50 border-white/10 focus-visible:ring-blue-500/50 pr-10"
+                            className="bg-background/50 border-white/10 focus-visible:ring-emerald-500/50 pr-10"
                             {...field}
                           />
                           <button
@@ -147,7 +145,7 @@ export default function LoginPage() {
                 />
                 <Button 
                   type="submit" 
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white mt-6" 
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-[#070709] font-bold font-mono mt-6 border-0 shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.45)] transition-all" 
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -165,7 +163,7 @@ export default function LoginPage() {
           <CardFooter className="flex flex-col gap-4 text-center border-t border-white/10 pt-6">
             <div className="text-sm text-muted-foreground">
               Don't have an account?{' '}
-              <Link href="/signup" className="text-blue-400 hover:text-blue-300 font-medium">
+              <Link href="/signup" className="text-emerald-400 hover:text-emerald-300 font-medium font-mono">
                 Sign up
               </Link>
             </div>
