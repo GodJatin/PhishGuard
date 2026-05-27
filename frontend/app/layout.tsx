@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import Providers from './providers';
 import { Toaster } from 'react-hot-toast';
+import GlobalOfflineBanner from '@/components/ui/offline-banner';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -26,6 +27,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={`${inter.className} min-h-screen bg-background text-foreground`}>
         <Providers>
+          <GlobalOfflineBanner />
           {children}
           <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
         </Providers>

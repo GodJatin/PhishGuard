@@ -1,7 +1,10 @@
 import logging
+import uuid
+import json
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Header, Depends
 from app.schemas.scan import ScanRequest, ScanResponse, TechnicalDetails
-from app.services.rule_engine import scanner
+from app.services.rule_engine import scanner, patterns, constants
 from app.services.model_engine import predictor
 from app.core.config import settings
 from app.utils.auth_helpers import get_current_user_id, get_authorized_scan
@@ -38,16 +41,16 @@ def scan_url_rule_based(request: ScanRequest, authorization: Optional[str] = Hea
     
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ")[1]
-        logger.info("JWT token extracted (first 20 chars): %s...", token[:20])
+        # NOTE: Do NOT log token values or prefixes — security requirement
         try:
             user_resp = supabase.auth.get_user(token)
             if user_resp and user_resp.user:
                 user_id = user_resp.user.id
                 logger.info("Authenticated user_id: %s", user_id)
             else:
-                logger.warning("get_user returned empty user — token may be expired or invalid.")
-        except Exception as auth_err:
-            logger.exception("JWT verification failed")
+                logger.warning("JWT validation returned no user — token may be expired or invalid.")
+        except Exception:
+            logger.warning("JWT verification failed for rule-based scan — proceeding as unauthenticated.")
     else:
         logger.info("No valid Authorization header — scan will not be persisted.")
 
@@ -96,7 +99,7 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
     # 1. Prediction
     try:
         status, score, confidence, feats, reasons, recommendation = predictor.predict_url(request.url)
-        logger.info("ML Analysis complete. Score=%d, Status=%s, Confidence=%.2f", score, status, confidence)
+        logger.info("ML Analysis complete. Base Score=%d, Status=%s, Confidence=%.2f", score, status, confidence)
     except ValueError as ve:
         logger.warning("ML Validation error: %s", ve)
         raise HTTPException(status_code=400, detail=str(ve))
@@ -104,7 +107,46 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
         logger.exception("Unexpected error during ML analysis")
         raise HTTPException(status_code=503, detail=f"ML Engine currently unavailable: {str(e)}")
 
-    # 2. Extract JWT and verify user (bypass RLS for save)
+    # 2. Layered Intelligence (Phase 9)
+    from app.services.intelligence_engine.reputation import assess_reputation
+    from app.services.spoof_detection.levenshtein_detector import check_brand_spoof
+    
+    domain = patterns.extract_domain(request.url)
+    reputation_res = assess_reputation(request.url, domain)
+    spoof_res = check_brand_spoof(domain)
+    
+    intelligence_flags = []
+    scoring_breakdown = feats.get("scoring_breakdown", [])
+    
+    if reputation_res["is_whitelisted"]:
+        score += reputation_res["reputation_score_delta"]
+        reasons.append(f"Whitelisted domain reputation: {reputation_res['whitelist_reason']}")
+        intelligence_flags.append(f"Whitelisted: {reputation_res['whitelist_reason']}")
+        scoring_breakdown.append({"rule": "Reputation Whitelist Credit", "points": reputation_res["reputation_score_delta"]})
+        
+    if reputation_res["is_blacklisted"]:
+        score += reputation_res["reputation_score_delta"]
+        if reputation_res["score_floor"] > 0:
+            score = max(score, reputation_res["score_floor"])
+        reasons.append(f"Flagged in threat intelligence feed: {reputation_res['blacklist_indicator']}")
+        intelligence_flags.append(f"Blacklisted: {reputation_res['blacklist_indicator']}")
+        scoring_breakdown.append({"rule": f"Threat Intel Blacklist Match", "points": reputation_res["reputation_score_delta"]})
+        
+    if spoof_res["is_spoofed"]:
+        score += 25
+        reasons.append(spoof_res["explanation"])
+        intelligence_flags.append(f"Brand Spoof: {spoof_res['spoof_type']} impersonating {spoof_res['suspected_brand']}")
+        scoring_breakdown.append({"rule": f"Brand Spoofing ({spoof_res['spoof_type']})", "points": 25})
+
+    score = max(0, min(score, 100))
+    if score < 35:
+        status = "SAFE"
+    elif score < 70:
+        status = "SUSPICIOUS"
+    else:
+        status = "DANGEROUS"
+
+    # 3. Extract JWT and verify user (bypass RLS for save)
     user_id = None
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ")[1]
@@ -112,19 +154,40 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
             user_resp = supabase.auth.get_user(token)
             if user_resp and user_resp.user:
                 user_id = user_resp.user.id
-        except Exception as auth_err:
-            logger.exception("JWT verification failed for ML scan")
+        except Exception:
+            logger.warning("JWT verification failed for ML scan — proceeding as unauthenticated.")
 
-    # 3. Pack Response
-    import uuid
-    from datetime import datetime, timezone
+    # 4. Pack Response
     scan_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    # Extract keywords found using rule_engine constants to match schema expectation
-    from app.services.rule_engine import patterns, constants
-    domain = patterns.extract_domain(request.url)
     keywords_found = patterns.find_suspicious_keywords(request.url, constants.SUSPICIOUS_KEYWORDS)
+
+    from app.services.intelligence_engine import classifier
+    temp_details = {
+        "is_whitelisted": reputation_res["is_whitelisted"],
+        "whitelist_reason": reputation_res["whitelist_reason"],
+        "is_blacklisted": reputation_res["is_blacklisted"],
+        "blacklist_source": reputation_res["blacklist_source"],
+        "blacklist_indicator": reputation_res["blacklist_indicator"],
+        "brand_spoof_detected": spoof_res["is_spoofed"],
+        "suspected_brand": spoof_res["suspected_brand"],
+        "spoof_explanation": spoof_res["explanation"],
+        "spoof_type": spoof_res["spoof_type"],
+        "domain": domain,
+        "contains_ip": feats["contains_ip"] == 1,
+        "subdomain_count": int(feats["subdomain_count"]),
+        "encoded_char_presence": feats["encoded_char_presence"] == 1,
+        "redirect_pattern_detected": feats["redirect_pattern"] == 1,
+        "scoring_breakdown": scoring_breakdown,
+        "ml_result": {"score": score, "confidence": confidence},
+        "confidence": confidence
+    }
+    threat_category, secondary_tags = classifier.determine_category_and_tags(score, temp_details, reasons)
+    severity_tier = classifier.determine_severity(score, reputation_res["is_blacklisted"])
+    consensus_level = classifier.determine_consensus(score, "ml", temp_details)
+    educational_insight = classifier.generate_educational_insight(threat_category, spoof_res["suspected_brand"])
+    scan_journey = classifier.generate_scan_journey(request.url, domain, score, temp_details)
 
     details = TechnicalDetails(
         https=feats["https"] == 1,
@@ -138,7 +201,28 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
         path_depth=int(feats["path_depth"]),
         query_parameter_count=int(feats["query_parameter_count"]),
         entropy_score=float(feats["entropy_score"]),
-        scoring_breakdown=feats.get("scoring_breakdown")
+        scoring_breakdown=scoring_breakdown,
+        
+        # Phase 9 fields
+        intelligence_flags=intelligence_flags if intelligence_flags else None,
+        is_whitelisted=reputation_res["is_whitelisted"],
+        whitelist_reason=reputation_res["whitelist_reason"] if reputation_res["is_whitelisted"] else None,
+        is_blacklisted=reputation_res["is_blacklisted"],
+        blacklist_source=reputation_res["blacklist_source"] if reputation_res["is_blacklisted"] else None,
+        brand_spoof_detected=spoof_res["is_spoofed"],
+        suspected_brand=spoof_res["suspected_brand"] if spoof_res["is_spoofed"] else None,
+        spoof_explanation=spoof_res["explanation"] if spoof_res["is_spoofed"] else None,
+        spoof_type=spoof_res["spoof_type"] if spoof_res["is_spoofed"] else None,
+        feature_importances=feats.get("feature_importances"),
+        ml_interpretation=feats.get("ml_interpretation"),
+
+        # Phase 10 fields
+        threat_category=threat_category,
+        secondary_threat_tags=secondary_tags,
+        severity_tier=severity_tier,
+        consensus_level=consensus_level,
+        educational_insight=educational_insight,
+        scan_journey=scan_journey
     )
 
     response = ScanResponse(
@@ -154,7 +238,7 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
         confidence=confidence
     )
 
-    # 4. Save to Database
+    # 5. Save to Database
     if user_id:
         db_status = status.lower()
         db_tech_details = details.model_dump()
@@ -182,6 +266,7 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
             
     return response
 
+
 @router.post("/comparison", response_model=ScanResponse)
 def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Header(None)):
     """
@@ -206,6 +291,31 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
         logger.exception("Unexpected error during ML analysis in comparison")
         raise HTTPException(status_code=503, detail=f"ML Engine currently unavailable: {str(e)}")
 
+    # Adjust ML score with reputation/spoof for fair comparison
+    from app.services.intelligence_engine.reputation import assess_reputation
+    from app.services.spoof_detection.levenshtein_detector import check_brand_spoof
+    
+    domain = patterns.extract_domain(request.url)
+    ml_reputation = assess_reputation(request.url, domain)
+    ml_spoof = check_brand_spoof(domain)
+    
+    if ml_reputation["is_whitelisted"]:
+        ml_score += ml_reputation["reputation_score_delta"]
+    if ml_reputation["is_blacklisted"]:
+        ml_score += ml_reputation["reputation_score_delta"]
+        if ml_reputation["score_floor"] > 0:
+            ml_score = max(ml_score, ml_reputation["score_floor"])
+    if ml_spoof["is_spoofed"]:
+        ml_score += 25
+        
+    ml_score = max(0, min(ml_score, 100))
+    if ml_score < 35:
+        ml_status = "SAFE"
+    elif ml_score < 70:
+        ml_status = "SUSPICIOUS"
+    else:
+        ml_status = "DANGEROUS"
+
     # 3. Extract user id from JWT
     user_id = None
     if authorization and authorization.startswith("Bearer "):
@@ -214,8 +324,8 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
             user_resp = supabase.auth.get_user(token)
             if user_resp and user_resp.user:
                 user_id = user_resp.user.id
-        except Exception as auth_err:
-            logger.exception("JWT verification failed for comparison scan")
+        except Exception:
+            logger.warning("JWT verification failed for comparison scan — proceeding as unauthenticated.")
 
     # 4. Generate comparison indicators and notes
     rule_indicators = []
@@ -305,8 +415,6 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
     combined_reasons = sorted(list(set(rule_report.reasons) | set(ml_reasons)))
 
     # Pack Response
-    import uuid
-    from datetime import datetime, timezone
     scan_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
     
@@ -322,6 +430,33 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
         "reasons": ml_reasons,
         "confidence": ml_confidence
     }
+
+    from app.services.intelligence_engine import classifier
+    temp_details = {
+        "is_whitelisted": rule_tech.is_whitelisted,
+        "whitelist_reason": rule_tech.whitelist_reason,
+        "is_blacklisted": rule_tech.is_blacklisted,
+        "blacklist_source": rule_tech.blacklist_source,
+        "blacklist_indicator": rule_tech.blacklist_source,
+        "brand_spoof_detected": rule_tech.brand_spoof_detected,
+        "suspected_brand": rule_tech.suspected_brand,
+        "spoof_explanation": rule_tech.spoof_explanation,
+        "spoof_type": rule_tech.spoof_type,
+        "domain": rule_tech.domain,
+        "contains_ip": rule_tech.contains_ip,
+        "subdomain_count": rule_tech.subdomain_count,
+        "encoded_char_presence": ml_feats.get("encoded_char_presence") == 1,
+        "redirect_pattern_detected": rule_tech.redirect_pattern_detected,
+        "scoring_breakdown": rule_tech.scoring_breakdown,
+        "ml_result": ml_res,
+        "rule_based_result": rule_res,
+        "score_difference": abs(rule_report.score - ml_score)
+    }
+    threat_category, secondary_tags = classifier.determine_category_and_tags(combined_score, temp_details, combined_reasons)
+    severity_tier = classifier.determine_severity(combined_score, rule_tech.is_blacklisted)
+    consensus_level = classifier.determine_consensus(combined_score, "comparison", temp_details)
+    educational_insight = classifier.generate_educational_insight(threat_category, rule_tech.suspected_brand)
+    scan_journey = classifier.generate_scan_journey(request.url, rule_tech.domain, combined_score, temp_details)
 
     details = TechnicalDetails(
         https=rule_tech.https,
@@ -340,7 +475,28 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
         ml_result=ml_res,
         shared_indicators=shared,
         unique_findings={"rule_based": unique_rule, "ml": unique_ml},
-        score_difference=abs(rule_report.score - ml_score)
+        score_difference=abs(rule_report.score - ml_score),
+        
+        # Phase 9 fields
+        intelligence_flags=rule_report.technical_details.intelligence_flags,
+        is_whitelisted=rule_report.technical_details.is_whitelisted,
+        whitelist_reason=rule_report.technical_details.whitelist_reason,
+        is_blacklisted=rule_report.technical_details.is_blacklisted,
+        blacklist_source=rule_report.technical_details.blacklist_source,
+        brand_spoof_detected=rule_report.technical_details.brand_spoof_detected,
+        suspected_brand=rule_report.technical_details.suspected_brand,
+        spoof_explanation=rule_report.technical_details.spoof_explanation,
+        spoof_type=rule_report.technical_details.spoof_type,
+        feature_importances=ml_feats.get("feature_importances"),
+        ml_interpretation=ml_feats.get("ml_interpretation"),
+
+        # Phase 10 fields
+        threat_category=threat_category,
+        secondary_threat_tags=secondary_tags,
+        severity_tier=severity_tier,
+        consensus_level=consensus_level,
+        educational_insight=educational_insight,
+        scan_journey=scan_journey
     )
 
     response = ScanResponse(
@@ -366,7 +522,7 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
             "user_id": user_id,
             "url": request.url,
             "scan_type": "comparison",
-            "status": db_status,          # lowercase: safe / suspicious / dangerous
+            "status": db_status,          # safe / suspicious / dangerous
             "score": combined_score,
             "reasons": combined_reasons,
             "technical_details": db_tech_details,
@@ -382,6 +538,7 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
             logger.exception("Comparison database insert FAILED")
             
     return response
+
 
 @router.get("/{scan_id}", response_model=ScanResponse)
 def get_scan_by_id(scan_id: str, user_id: str = Depends(get_current_user_id)):
@@ -399,10 +556,10 @@ def get_scan_by_id(scan_id: str, user_id: str = Depends(get_current_user_id)):
         
     tech_data = scan_data.get("technical_details", {})
     if isinstance(tech_data, str):
-        import json
         try:
             tech_data = json.loads(tech_data)
         except Exception:
+            logger.warning("Failed to parse technical_details JSON for scan %s", scan_id)
             tech_data = {}
 
     tech_details = TechnicalDetails(
@@ -422,8 +579,30 @@ def get_scan_by_id(scan_id: str, user_id: str = Depends(get_current_user_id)):
         ml_result=tech_data.get("ml_result"),
         shared_indicators=tech_data.get("shared_indicators"),
         unique_findings=tech_data.get("unique_findings"),
-        score_difference=tech_data.get("score_difference")
+        score_difference=tech_data.get("score_difference"),
+        
+        # Phase 9 fields
+        intelligence_flags=tech_data.get("intelligence_flags"),
+        is_whitelisted=tech_data.get("is_whitelisted"),
+        whitelist_reason=tech_data.get("whitelist_reason"),
+        is_blacklisted=tech_data.get("is_blacklisted"),
+        blacklist_source=tech_data.get("blacklist_source"),
+        brand_spoof_detected=tech_data.get("brand_spoof_detected"),
+        suspected_brand=tech_data.get("suspected_brand"),
+        spoof_explanation=tech_data.get("spoof_explanation"),
+        spoof_type=tech_data.get("spoof_type"),
+        feature_importances=tech_data.get("feature_importances"),
+        ml_interpretation=tech_data.get("ml_interpretation"),
+
+        # Phase 10 fields
+        threat_category=tech_data.get("threat_category"),
+        secondary_threat_tags=tech_data.get("secondary_threat_tags"),
+        severity_tier=tech_data.get("severity_tier"),
+        consensus_level=tech_data.get("consensus_level"),
+        educational_insight=tech_data.get("educational_insight"),
+        scan_journey=tech_data.get("scan_journey")
     )
+
 
     return ScanResponse(
         scan_id=scan_data.get("id"),
@@ -437,6 +616,7 @@ def get_scan_by_id(scan_id: str, user_id: str = Depends(get_current_user_id)):
         timestamp=str(scan_data.get("created_at", "")),
         confidence=tech_data.get("confidence") or (tech_data.get("ml_result", {}).get("confidence") if tech_data.get("ml_result") else None)
     )
+
 
 
 

@@ -32,7 +32,36 @@ export interface TechnicalDetails {
     ml: string[];
   };
   score_difference?: number;
+  // Phase 9 fields
+  intelligence_flags?: string[];
+  is_whitelisted?: boolean;
+  whitelist_reason?: string;
+  is_blacklisted?: boolean;
+  blacklist_source?: string;
+  brand_spoof_detected?: boolean;
+  suspected_brand?: string;
+  spoof_explanation?: string;
+  spoof_type?: string;
+  feature_importances?: Array<{
+    feature: string;
+    label: string;
+    contribution_pct: number;
+    is_active: boolean;
+  }>;
+  ml_interpretation?: string;
+  // Phase 10 fields
+  threat_category?: string;
+  secondary_threat_tags?: string[];
+  severity_tier?: string;
+  consensus_level?: string;
+  educational_insight?: string;
+  scan_journey?: Array<{
+    stage: string;
+    status: 'passed' | 'triggered' | 'warning' | 'critical' | 'informational';
+    message: string;
+  }>;
 }
+
 
 export interface ScanResult {
   scan_id: string;

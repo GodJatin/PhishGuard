@@ -10,6 +10,7 @@ import axios from '@/lib/api/axios';
 import { API_ENDPOINTS } from '@/lib/api/endpoints';
 import { ScanResult } from '@/types/scan';
 import Link from 'next/link';
+import { safeParseJSON, safeSetJSON } from '@/lib/utils/localStorage';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,9 @@ interface OverviewStats {
   latest_scan_timestamp: string | null;
   total_ml_percentage: number;
   total_rule_based_percentage: number;
+  threat_category_counts?: Record<string, number>;
+  spoofed_brand_counts?: Record<string, number>;
+  severity_tier_counts?: Record<string, number>;
   insights: {
     most_common_keyword: string;
     most_detected_pattern: string;
@@ -144,6 +148,10 @@ export default function DashboardPage() {
   const [loadingStageIdx, setLoadingStageIdx] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [guestHistory, setGuestHistory] = useState<ScanResult[]>([]);
+  const [scanTakingLong, setScanTakingLong] = useState(false);
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // AbortController ref — cancels the in-flight scan request when user rescans or navigates away
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const currentStages = 
     scanType === 'pretrained' ? mlLoadingStages : 
@@ -155,17 +163,11 @@ export default function DashboardPage() {
     setMounted(true);
   }, []);
 
-  // Fetch guest history from localStorage
+  // Fetch guest history from localStorage safely
   useEffect(() => {
-    if (isGuest && typeof window !== 'undefined') {
-      const stored = localStorage.getItem('phishguard_guest_scans');
-      if (stored) {
-        try {
-          setGuestHistory(JSON.parse(stored));
-        } catch (e) {
-          console.error('Failed to parse guest scans', e);
-        }
-      }
+    if (isGuest) {
+      const stored = safeParseJSON<ScanResult[]>('phishguard_guest_scans', []);
+      setGuestHistory(stored);
     }
   }, [isGuest]);
 
@@ -251,42 +253,49 @@ export default function DashboardPage() {
       if (session?.access_token) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
+
+      // Abort any previous in-flight scan before starting a new one
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
       
       const response = await axios.post(
         endpoint, 
         { url: targetUrl },
-        { headers }
+        { headers, signal: controller.signal }
       );
       return response.data as ScanResult;
     },
     onMutate: () => {
       setLoadingStageIdx(0);
+      setScanTakingLong(false);
+      // Show "taking longer than expected" message after 10s
+      scanTimeoutRef.current = setTimeout(() => {
+        setScanTakingLong(true);
+      }, 10000);
     },
     onSuccess: (data) => {
+      // Clear abort controller and long-scan timeout
+      abortControllerRef.current = null;
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+        scanTimeoutRef.current = null;
+      }
+      setScanTakingLong(false);
+
       if (!data || !data.scan_id) {
         toast.error('API returned an invalid response format.');
         return;
       }
       
       if (isGuest) {
-        let scans: ScanResult[] = [];
-        if (typeof window !== 'undefined') {
-          const stored = localStorage.getItem('phishguard_guest_scans');
-          if (stored) {
-            try {
-              scans = JSON.parse(stored);
-            } catch (e) {
-              scans = [];
-            }
-          }
-          // Add new scan to beginning
-          scans = [data, ...scans];
-          // Trim to max 10 entries
-          if (scans.length > 10) {
-            scans = scans.slice(0, 10);
-          }
-          localStorage.setItem('phishguard_guest_scans', JSON.stringify(scans));
-        }
+        // Read existing scans safely from localStorage
+        const existingScans = safeParseJSON<ScanResult[]>('phishguard_guest_scans', []);
+        const updatedScans = [data, ...existingScans].slice(0, 10); // Keep max 10
+        safeSetJSON('phishguard_guest_scans', updatedScans);
+        setGuestHistory(updatedScans);
         
         toast.success('Scan complete (saved locally)');
         router.push(`/scan/${data.scan_id}?guest=true`);
@@ -303,25 +312,61 @@ export default function DashboardPage() {
       }
     },
     onError: (error: any) => {
-      if (error.response) {
-        toast.error(error.response.data?.detail || 'Failed to scan URL');
-      } else {
-        toast.error(error.message || 'An error occurred during URL scanning');
+      // Clear abort controller and long-scan timeout
+      abortControllerRef.current = null;
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+        scanTimeoutRef.current = null;
       }
+      setScanTakingLong(false);
+
+      // Silently ignore aborted requests (user cancelled by rescanning or navigating)
+      if (error?.name === 'CanceledError' || error?.name === 'AbortError' || error?.code === 'ERR_CANCELED') {
+        return;
+      }
+
+      // Use normalized error message from axios interceptor when available
+      const message =
+        error.userMessage ||
+        error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        'An error occurred during URL scanning';
+      toast.error(message);
     }
   });
 
-  const handleScan = (e?: React.MouseEvent) => {
+  const runSimulation = (simUrl: string, type: string) => {
+    setUrl(simUrl);
+    setScanType(type);
+    toast.success(`Loaded simulation target. Click 'Scan URL' to execute.`);
+    inputRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => inputRef.current?.focus(), 500);
+  };
+
+  const handleScan = (e?: React.MouseEvent | React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!url) {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
       toast.error("Please enter a URL to scan");
+      inputRef.current?.focus();
+      return;
+    }
+    if (trimmedUrl.length > 2048) {
+      toast.error("URL is too long. Maximum 2048 characters allowed.");
       return;
     }
     if (scanType === 'custom') {
       toast("This engine is currently under development.", { icon: '🚧' });
       return;
     }
-    scanMutation.mutate(url);
+    scanMutation.mutate(trimmedUrl);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !scanMutation.isPending) {
+      handleScan();
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -360,7 +405,7 @@ export default function DashboardPage() {
     </Card>
   );
 
-  // Compute guest stats on the fly
+  // Compute guest stats on the fly — guard against empty arrays
   const computedOverview = isGuest ? {
     total_scans: guestHistory.length,
     safe_count: guestHistory.filter(s => s.status === 'SAFE').length,
@@ -368,16 +413,49 @@ export default function DashboardPage() {
     dangerous_count: guestHistory.filter(s => s.status === 'DANGEROUS').length,
     ml_scan_count: guestHistory.filter(s => s.scan_type === 'ml' || s.scan_type === 'comparison').length,
     rule_based_count: guestHistory.filter(s => s.scan_type === 'rule-based' || s.scan_type === 'comparison').length,
-    average_threat_score: guestHistory.length ? Math.round(guestHistory.reduce((acc, curr) => acc + curr.score, 0) / guestHistory.length) : 0,
-    highest_threat_score: guestHistory.length ? Math.max(...guestHistory.map(s => s.score)) : 0,
-    latest_scan_timestamp: guestHistory.length ? guestHistory[0].timestamp : null,
-    total_ml_percentage: guestHistory.length ? Math.round((guestHistory.filter(s => s.scan_type === 'ml' || s.scan_type === 'comparison').length / guestHistory.length) * 100) : 0,
-    total_rule_based_percentage: guestHistory.length ? Math.round((guestHistory.filter(s => s.scan_type === 'rule-based' || s.scan_type === 'comparison').length / guestHistory.length) * 100) : 0,
+    average_threat_score: guestHistory.length > 0
+      ? Math.round(guestHistory.reduce((acc, curr) => acc + (curr.score ?? 0), 0) / guestHistory.length)
+      : 0,
+    // Guard against Math.max of empty array returning -Infinity
+    highest_threat_score: guestHistory.length > 0 ? Math.max(...guestHistory.map(s => s.score ?? 0)) : 0,
+    latest_scan_timestamp: guestHistory.length > 0 ? guestHistory[0].timestamp : null,
+    total_ml_percentage: guestHistory.length > 0
+      ? Math.round((guestHistory.filter(s => s.scan_type === 'ml' || s.scan_type === 'comparison').length / guestHistory.length) * 100)
+      : 0,
+    total_rule_based_percentage: guestHistory.length > 0
+      ? Math.round((guestHistory.filter(s => s.scan_type === 'rule-based' || s.scan_type === 'comparison').length / guestHistory.length) * 100)
+      : 0,
+    threat_category_counts: guestHistory.reduce((acc: Record<string, number>, s) => {
+      const cat = s.technical_details?.threat_category || 'Generic Phishing Attempt';
+      acc[cat] = (acc[cat] || 0) + 1;
+      return acc;
+    }, {}),
+    spoofed_brand_counts: guestHistory.reduce((acc: Record<string, number>, s) => {
+      const brand = s.technical_details?.suspected_brand;
+      if (brand) {
+        const key = brand.charAt(0).toUpperCase() + brand.slice(1);
+        acc[key] = (acc[key] || 0) + 1;
+      }
+      return acc;
+    }, {}),
+    severity_tier_counts: guestHistory.reduce((acc: Record<string, number>, s) => {
+      const sev = s.technical_details?.severity_tier || (s.score >= 85 ? 'Critical' : (s.score >= 60 ? 'High' : (s.score >= 40 ? 'Medium' : (s.score >= 20 ? 'Low' : 'Informational'))));
+      acc[sev] = (acc[sev] || 0) + 1;
+      return acc;
+    }, {
+      Informational: 0,
+      Low: 0,
+      Medium: 0,
+      High: 0,
+      Critical: 0
+    }),
     insights: {
       most_common_keyword: 'None',
       most_detected_pattern: 'N/A',
-      highest_threat_score: guestHistory.length ? Math.max(...guestHistory.map(s => s.score)) : 0,
-      most_used_engine: guestHistory.length ? (guestHistory.filter(s => s.scan_type === 'ml').length >= guestHistory.filter(s => s.scan_type === 'rule-based').length ? 'Pretrained AI' : 'Rule-Based') : 'N/A'
+      highest_threat_score: guestHistory.length > 0 ? Math.max(...guestHistory.map(s => s.score ?? 0)) : 0,
+      most_used_engine: guestHistory.length > 0
+        ? (guestHistory.filter(s => s.scan_type === 'ml').length >= guestHistory.filter(s => s.scan_type === 'rule-based').length ? 'Pretrained AI' : 'Rule-Based')
+        : 'N/A'
     }
   } : null;
 
@@ -445,15 +523,29 @@ export default function DashboardPage() {
       {hasConnectionError && (
         <div className="p-4 border border-red-500/30 bg-red-500/10 text-red-400 rounded-lg flex items-start gap-3 animate-in fade-in duration-300">
           <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-red-500 animate-pulse" />
-          <div className="space-y-1">
+          <div className="space-y-1 flex-1">
             <h4 className="text-sm font-semibold">Threat Intelligence API Connection Failure</h4>
             <p className="text-xs text-red-400/80">
               The Security Operations Center could not connect to the backend threat intelligence servers.
               Please verify that the backend API service is running locally at <code className="bg-red-500/20 px-1 rounded font-mono">http://127.0.0.1:8000</code>.
             </p>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 h-8 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-red-500/30"
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ['analytics-overview'] });
+              queryClient.invalidateQueries({ queryKey: ['analytics-trends'] });
+              queryClient.invalidateQueries({ queryKey: ['analytics-keywords'] });
+              queryClient.invalidateQueries({ queryKey: ['analytics-recent-threats'] });
+            }}
+          >
+            Retry
+          </Button>
         </div>
       )}
+
 
       {/* QUICK SCAN CONSOLE */}
       <Card className="border-white/10 bg-black/40 backdrop-blur-xl relative overflow-hidden group shadow-[0_0_30px_rgba(0,0,0,0.5)]">
@@ -475,7 +567,10 @@ export default function DashboardPage() {
               className="w-full sm:flex-1 bg-background/50 border-white/10 focus-visible:ring-blue-500/50 h-12 text-sm font-mono"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={handleKeyDown}
               disabled={scanMutation.isPending}
+              aria-label="URL to scan"
+              maxLength={2048}
             />
             <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
               <select 
@@ -537,6 +632,15 @@ export default function DashboardPage() {
                   transition={{ duration: 0.6, ease: "easeOut" }}
                 />
               </div>
+              {scanTakingLong && (
+                <div className="flex items-start gap-2 text-xs text-amber-400/90 font-mono bg-amber-500/5 border border-amber-500/20 rounded-md px-3 py-2">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse mt-1 shrink-0" />
+                  <span>
+                    <span className="font-semibold text-amber-400">Server is waking up.</span>
+                    {' '}Free-tier hosting can take 20–40 seconds on a cold start. Hang tight — your scan is queued.
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -730,7 +834,7 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Chart 2: Threat Distribution */}
+            {/* Chart 2: Threat Severity Overview */}
             <div>
               {isOverviewLoading || !mounted ? (
                 <ChartSkeleton />
@@ -738,67 +842,61 @@ export default function DashboardPage() {
                 <Card className="border-red-500/15 bg-red-950/5 backdrop-blur-xl h-[360px]">
                   <CardHeader>
                     <CardTitle className="text-sm font-semibold flex items-center gap-2 text-red-400">
-                      <PieIcon className="w-4 h-4" /> Threat Distribution
+                      <BarChart3 className="w-4 h-4" /> Threat Severity Overview
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="h-[270px] flex flex-col items-center justify-center text-center p-6 border border-dashed border-red-500/20 rounded-xl bg-red-950/5">
                     <AlertTriangle className="w-8 h-8 text-red-500/60 mb-2 animate-pulse" />
-                    <h4 className="text-xs font-semibold text-red-400">Distribution Offline</h4>
+                    <h4 className="text-xs font-semibold text-red-400">Severity Overview Offline</h4>
                     <p className="text-[11px] text-red-400/60 max-w-[200px] mt-1">
                       Data payload is unavailable.
                     </p>
                   </CardContent>
                 </Card>
-              ) : overview && overview.total_scans > 0 ? (
-                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px] flex flex-col">
+              ) : activeOverview && activeOverview.total_scans > 0 ? (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px] flex flex-col justify-between">
                   <CardHeader className="pb-0">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <PieIcon className="w-4 h-4 text-purple-400" />
-                      Threat Distribution
+                      <BarChart3 className="w-4 h-4 text-purple-400" />
+                      Threat Severity Overview
                     </CardTitle>
-                    <CardDescription>Visual severity breakout of URL reports.</CardDescription>
+                    <CardDescription>Visual breakout of URL threat severity tiers.</CardDescription>
                   </CardHeader>
-                  <CardContent className="flex-1 h-[250px] w-full flex flex-col justify-center">
-                    <div className="h-[180px] w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={[
-                              { name: 'Safe', value: overview.safe_count, color: '#10b981' },
-                              { name: 'Suspicious', value: overview.suspicious_count, color: '#f59e0b' },
-                              { name: 'Dangerous', value: overview.dangerous_count, color: '#ef4444' }
-                            ]}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={50}
-                            outerRadius={70}
-                            paddingAngle={5}
-                            dataKey="value"
-                          >
-                            {[
-                              { name: 'Safe', color: '#10b981' },
-                              { name: 'Suspicious', color: '#f59e0b' },
-                              { name: 'Dangerous', color: '#ef4444' }
-                            ].map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip content={<CustomTooltip />} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="flex justify-center gap-4 text-xs font-mono mt-1">
-                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500" /> Safe</span>
-                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500" /> Warning</span>
-                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Danger</span>
-                    </div>
+                  <CardContent className="h-[230px] w-full pt-4 pr-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart 
+                        data={[
+                          { name: 'Info', count: activeOverview.severity_tier_counts?.Informational || 0, fill: '#3b82f6' },
+                          { name: 'Low', count: activeOverview.severity_tier_counts?.Low || 0, fill: '#10b981' },
+                          { name: 'Medium', count: activeOverview.severity_tier_counts?.Medium || 0, fill: '#f59e0b' },
+                          { name: 'High', count: activeOverview.severity_tier_counts?.High || 0, fill: '#f97316' },
+                          { name: 'Critical', count: activeOverview.severity_tier_counts?.Critical || 0, fill: '#ef4444' }
+                        ]}
+                        margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+                        <XAxis dataKey="name" stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} />
+                        <YAxis stroke="#737373" style={{ fontSize: 10, fontFamily: 'monospace' }} allowDecimals={false} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar dataKey="count" name="Threats" radius={[4, 4, 0, 0]}>
+                          <Cell fill="#3b82f6" />
+                          <Cell fill="#10b981" />
+                          <Cell fill="#f59e0b" />
+                          <Cell fill="#f97316" />
+                          <Cell fill="#ef4444" />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
                   </CardContent>
+                  <div className="px-6 pb-4 text-[10px] text-muted-foreground font-mono text-center">
+                    Unified severity metrics based on live scan data.
+                  </div>
                 </Card>
               ) : (
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[360px]">
                   <CardHeader>
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <PieIcon className="w-4 h-4 text-purple-400" /> Threat Distribution
+                      <BarChart3 className="w-4 h-4 text-purple-400" /> Threat Severity Overview
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="h-[270px]">
@@ -807,96 +905,171 @@ export default function DashboardPage() {
                 </Card>
               )}
             </div>
-
           </div>
+
+          {/* INSIGHTS & ENGINE BAR CHART ROW */}
 
           {/* INSIGHTS & ENGINE BAR CHART ROW */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
             {/* Insights Panel */}
-            <div className="lg:col-span-2">
-              {isOverviewLoading || (!overview && !hasConnectionError) ? (
+            <div className="lg:col-span-1">
+              {isOverviewLoading || (!activeOverview && !hasConnectionError) ? (
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] animate-pulse">
                   <CardHeader><div className="h-5 w-48 bg-white/10 rounded" /></CardHeader>
                   <CardContent className="space-y-4"><div className="h-20 bg-white/5 rounded" /><div className="h-20 bg-white/5 rounded" /></CardContent>
                 </Card>
-              ) : (hasConnectionError || !overview) ? (
+              ) : (hasConnectionError || !activeOverview) ? (
                 <Card className="border-red-500/15 bg-red-950/5 backdrop-blur-xl h-[330px] flex flex-col justify-between">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2 text-red-400">
                       <Brain className="w-4 h-4" />
-                      Threat Intelligence Insights
+                      Insights
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-red-500/20 rounded-xl bg-red-950/5">
                     <AlertTriangle className="w-8 h-8 text-red-500/60 mb-2 animate-pulse" />
-                    <h4 className="text-xs font-semibold text-red-400">Insights Offline</h4>
-                    <p className="text-[11px] text-red-400/60 max-w-[240px] mt-1">
-                      Unable to compute threat insights.
-                    </p>
+                    <h4 className="text-xs font-semibold text-red-400 font-mono">Offline</h4>
                   </CardContent>
                 </Card>
               ) : (
                 <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
-                  <CardHeader className="pb-2">
+                  <CardHeader className="pb-1">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
                       <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
-                      Threat Intelligence Insights
+                      Insights Summary
                     </CardTitle>
-                    <CardDescription>Actionable heuristics derived from scanned database artifacts.</CardDescription>
+                    <CardDescription className="text-[11px]">Actionable heuristics from user ledger.</CardDescription>
                   </CardHeader>
-                  <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-auto">
-                    <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
-                      <div className="p-2 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
-                        <Target className="w-4 h-4" />
+                  <CardContent className="space-y-2.5 my-auto">
+                    <div className="p-2 bg-white/5 border border-white/5 rounded flex items-center gap-2">
+                      <div className="p-1 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                        <Target className="w-3.5 h-3.5" />
                       </div>
-                      <div className="min-w-0">
-                        <span className="block text-[10px] text-muted-foreground font-mono uppercase">Most Abused Keyword</span>
-                        <span className="font-mono text-sm font-bold text-white truncate block capitalize">
-                          {overview.insights.most_common_keyword}
+                      <div className="min-w-0 flex-1 flex justify-between items-center text-xs">
+                        <span className="text-[10px] text-muted-foreground font-mono uppercase">Top Keyword</span>
+                        <span className="font-mono font-bold text-white truncate max-w-[120px] capitalize">
+                          {activeOverview.insights.most_common_keyword}
                         </span>
                       </div>
                     </div>
 
-                    <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
-                      <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-red-400">
-                        <ShieldAlert className="w-4 h-4" />
+                    <div className="p-2 bg-white/5 border border-white/5 rounded flex items-center gap-2">
+                      <div className="p-1 rounded bg-red-500/10 border border-red-500/20 text-red-400">
+                        <ShieldAlert className="w-3.5 h-3.5" />
                       </div>
-                      <div className="min-w-0">
-                        <span className="block text-[10px] text-muted-foreground font-mono uppercase">Max Recorded Score</span>
-                        <span className="font-mono text-sm font-bold text-red-400 block">
-                          {overview.insights.highest_threat_score}/100
+                      <div className="min-w-0 flex-1 flex justify-between items-center text-xs">
+                        <span className="text-[10px] text-muted-foreground font-mono uppercase">Max Score</span>
+                        <span className="font-mono font-bold text-red-400">
+                          {activeOverview.insights.highest_threat_score}/100
                         </span>
                       </div>
                     </div>
 
-                    <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
-                      <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                        <TrendingUp className="w-4 h-4" />
+                    <div className="p-2 bg-white/5 border border-white/5 rounded flex items-center gap-2">
+                      <div className="p-1 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                        <TrendingUp className="w-3.5 h-3.5" />
                       </div>
-                      <div className="min-w-0">
-                        <span className="block text-[10px] text-muted-foreground font-mono uppercase">Primary Engine Used</span>
-                        <span className="font-mono text-sm font-bold text-white block">
-                          {overview.insights.most_used_engine}
+                      <div className="min-w-0 flex-1 flex justify-between items-center text-xs">
+                        <span className="text-[10px] text-muted-foreground font-mono uppercase">Top Engine</span>
+                        <span className="font-mono font-bold text-white truncate max-w-[120px]">
+                          {activeOverview.insights.most_used_engine}
                         </span>
                       </div>
                     </div>
 
-                    <div className="p-3 bg-white/5 border border-white/5 rounded-lg flex items-start gap-3">
-                      <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-400">
-                        <AlertTriangle className="w-4 h-4" />
+                    <div className="p-2 bg-white/5 border border-white/5 rounded flex items-center gap-2">
+                      <div className="p-1 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-400">
+                        <AlertTriangle className="w-3.5 h-3.5" />
                       </div>
-                      <div className="min-w-0">
-                        <span className="block text-[10px] text-muted-foreground font-mono uppercase">Top Vulnerability Trigger</span>
-                        <span className="font-mono text-xs font-semibold text-white block truncate max-w-[200px]" title={overview.insights.most_detected_pattern}>
-                          {overview.insights.most_detected_pattern}
+                      <div className="min-w-0 flex-1 flex justify-between items-center text-xs">
+                        <span className="text-[10px] text-muted-foreground font-mono uppercase">Main Vector</span>
+                        <span className="font-mono font-semibold text-white truncate max-w-[120px]" title={activeOverview.insights.most_detected_pattern}>
+                          {activeOverview.insights.most_detected_pattern}
                         </span>
                       </div>
                     </div>
                   </CardContent>
-                  <div className="px-6 pb-4 pt-2 border-t border-white/5 text-[10px] text-muted-foreground font-mono flex items-center justify-between">
-                    <span>Database Sync Time: Live</span>
-                    <span>Audit Logs: Enforced</span>
+                  <div className="px-4 pb-3 pt-1.5 border-t border-white/5 text-[9px] text-muted-foreground font-mono text-center">
+                    Database Feed: Live Sync
+                  </div>
+                </Card>
+              )}
+            </div>
+
+            {/* Threat Categories & Brands Panel */}
+            <div className="lg:col-span-1">
+              {isOverviewLoading || (!activeOverview && !hasConnectionError) ? (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] animate-pulse">
+                  <CardHeader><div className="h-5 w-48 bg-white/10 rounded" /></CardHeader>
+                  <CardContent className="space-y-4"><div className="h-20 bg-white/5 rounded" /><div className="h-20 bg-white/5 rounded" /></CardContent>
+                </Card>
+              ) : (hasConnectionError || !activeOverview) ? (
+                <Card className="border-red-500/15 bg-red-950/5 backdrop-blur-xl h-[330px] flex flex-col justify-between">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2 text-red-400">
+                      <Shield className="w-4 h-4" />
+                      Threat Classification
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-red-500/20 rounded-xl bg-red-950/5">
+                    <AlertTriangle className="w-8 h-8 text-red-500/60 mb-2 animate-pulse" />
+                    <h4 className="text-xs font-semibold text-red-400 font-mono">Offline</h4>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl h-[330px] flex flex-col justify-between">
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-purple-400 animate-pulse" />
+                      Threat Vectors & Brands
+                    </CardTitle>
+                    <CardDescription className="text-[11px]">Primary vectors and targets flagged.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 my-auto">
+                    {/* Top Categories Badge Grid */}
+                    <div className="space-y-1.5">
+                      <span className="block text-[10px] text-muted-foreground font-mono uppercase tracking-wider font-semibold">Top Threat Categories</span>
+                      {Object.entries(activeOverview.threat_category_counts || {}).length > 0 ? (
+                        <div className="grid grid-cols-1 gap-1 max-h-[110px] overflow-y-auto pr-1">
+                          {Object.entries(activeOverview.threat_category_counts || {})
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 3)
+                            .map(([category, count]) => (
+                              <div key={category} className="flex items-center justify-between p-1.5 rounded bg-white/5 border border-white/5 text-[11px] font-mono">
+                                <span className="text-foreground truncate max-w-[140px]">{category}</span>
+                                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                                  {count}
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/60 italic block font-mono">No vectors mapped yet.</span>
+                      )}
+                    </div>
+
+                    {/* Spoofed Brands tag list */}
+                    <div className="space-y-1.5 pt-1.5 border-t border-white/5">
+                      <span className="block text-[10px] text-muted-foreground font-mono uppercase tracking-wider font-semibold">Spoofed Brand Targets</span>
+                      {Object.entries(activeOverview.spoofed_brand_counts || {}).length > 0 ? (
+                        <div className="flex flex-wrap gap-1 max-h-[60px] overflow-y-auto">
+                          {Object.entries(activeOverview.spoofed_brand_counts || {})
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 4)
+                            .map(([brand, count]) => (
+                              <span key={brand} className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-[10px] flex items-center gap-1">
+                                {brand} ({count})
+                              </span>
+                            ))}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/60 italic block font-mono">No brand targets identified.</span>
+                      )}
+                    </div>
+                  </CardContent>
+                  <div className="px-4 pb-3 pt-1.5 border-t border-white/5 text-[9px] text-muted-foreground font-mono text-center">
+                    Classification Priority: Enforced
                   </div>
                 </Card>
               )}

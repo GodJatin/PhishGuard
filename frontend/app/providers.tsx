@@ -8,7 +8,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 60 * 1000,
+        staleTime: 60 * 1000,          // 1 minute stale time
+        retry: 1,                       // retry once on failure
+        retryDelay: 2000,              // 2 second backoff
+        refetchOnWindowFocus: false,   // don't refetch on tab switch — reduces noise
       },
     },
   }));
@@ -21,36 +24,40 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   // Register PWA Service Worker & listen to install prompt
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Register service worker
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').then(
-            (registration) => {
-              console.log('[PWA] Service Worker registered with scope:', registration.scope);
-            },
-            (err) => {
-              console.error('[PWA] Service Worker registration failed:', err);
-            }
-          );
-        });
+    if (typeof window === 'undefined') return;
+
+    // Register service worker safely — skip if not supported or not HTTPS
+    const registerSW = async () => {
+      if (!('serviceWorker' in navigator)) return;
+
+      try {
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        console.log('[PWA] Service Worker registered with scope:', registration.scope);
+      } catch (err) {
+        // Non-fatal — app works fine without SW
+        console.warn('[PWA] Service Worker registration failed:', err);
       }
+    };
 
-      // Intercept install prompt
-      const handleInstallPrompt = (e: Event) => {
-        // Prevent default browser popup mini-infobar from showing
-        e.preventDefault();
-        // Stash the event so it can be triggered later
-        setDeferredPrompt(e);
-        console.log('[PWA] Intercepted install prompt. Ready for custom trigger.');
-      };
-
-      window.addEventListener('beforeinstallprompt', handleInstallPrompt);
-
-      return () => {
-        window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
-      };
+    // Register after window load to not block initial page render
+    if (document.readyState === 'complete') {
+      registerSW();
+    } else {
+      window.addEventListener('load', registerSW, { once: true });
     }
+
+    // Intercept install prompt for custom PWA install button
+    const handleInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      console.log('[PWA] Intercepted install prompt. Ready for custom trigger.');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+    };
   }, [setDeferredPrompt]);
 
   return (
@@ -59,3 +66,4 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     </QueryClientProvider>
   );
 }
+

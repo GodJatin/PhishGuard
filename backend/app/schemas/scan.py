@@ -1,9 +1,25 @@
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+import re
 
 class ScanRequest(BaseModel):
-    url: str = Field(..., description="The URL to scan.")
+    url: str = Field(
+        ...,
+        min_length=1,
+        max_length=2048,
+        description="The URL to scan. Must be between 1 and 2048 characters."
+    )
+
+    @field_validator("url")
+    @classmethod
+    def reject_dangerous_schemes(cls, v: str) -> str:
+        """Reject clearly dangerous or non-HTTP(S) schemes before any processing."""
+        stripped = v.strip().lower()
+        dangerous_prefixes = ("javascript:", "data:", "vbscript:", "file:", "about:", "blob:")
+        for prefix in dangerous_prefixes:
+            if stripped.startswith(prefix):
+                raise ValueError(f"Dangerous URL scheme detected and rejected.")
+        return v.strip()
 
 class TechnicalDetails(BaseModel):
     https: bool
@@ -26,6 +42,29 @@ class TechnicalDetails(BaseModel):
     shared_indicators: Optional[List[str]] = None
     unique_findings: Optional[Dict[str, List[str]]] = None
     score_difference: Optional[int] = None
+
+    # Layered Threat Intelligence (Phase 9)
+    intelligence_flags: Optional[List[str]] = None
+    is_whitelisted: Optional[bool] = None
+    whitelist_reason: Optional[str] = None
+    is_blacklisted: Optional[bool] = None
+    blacklist_source: Optional[str] = None
+    brand_spoof_detected: Optional[bool] = None
+    suspected_brand: Optional[str] = None
+    spoof_explanation: Optional[str] = None
+    spoof_type: Optional[str] = None
+    feature_importances: Optional[List[Dict[str, Any]]] = None
+    ml_interpretation: Optional[str] = None
+
+    # Analyst Threat Intelligence Metrics (Phase 10)
+    threat_category: Optional[str] = None
+    secondary_threat_tags: Optional[List[str]] = None
+    severity_tier: Optional[str] = None
+    consensus_level: Optional[str] = None
+    educational_insight: Optional[str] = None
+    scan_journey: Optional[List[Dict[str, Any]]] = None
+
+
 
 class ScanResponse(BaseModel):
     scan_id: str

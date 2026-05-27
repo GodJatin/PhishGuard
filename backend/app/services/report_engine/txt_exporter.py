@@ -28,11 +28,15 @@ def generate_txt_report(scan: dict) -> str:
     report.append("----------------------------------------------------------------------")
     report.append("1. SUMMARY")
     report.append("----------------------------------------------------------------------")
-    report.append(f"Threat Score: {scan.get('score', 0)}/100")
-    report.append(f"Severity    : {status_str}")
+    report.append(f"Threat Score   : {scan.get('score', 0)}/100")
+    report.append(f"Severity Status: {status_str}")
+    report.append(f"Severity Tier  : {tech.get('severity_tier', 'N/A')}")
+    report.append(f"Threat Category: {tech.get('threat_category', 'N/A')}")
+    if tech.get("consensus_level"):
+        report.append(f"Consensus Level: {tech.get('consensus_level')}")
     
     if tech.get("confidence") is not None:
-        report.append(f"Confidence  : {float(tech.get('confidence')) * 100:.1f}%")
+        report.append(f"Confidence     : {float(tech.get('confidence')) * 100:.1f}%")
     
     status_desc = ""
     if status_str == "SAFE":
@@ -42,8 +46,38 @@ def generate_txt_report(scan: dict) -> str:
     else:
         status_desc = "High-risk phishing indicators detected. Avoid visiting or submitting data."
         
-    report.append(f"Assessment  : {status_desc}")
+    report.append(f"Assessment     : {status_desc}")
     report.append("")
+    
+    # WHY THIS MATTERS (EDUCATIONAL INSIGHT)
+    if tech.get("educational_insight"):
+        report.append("----------------------------------------------------------------------")
+        report.append("WHY THIS MATTERS")
+        report.append("----------------------------------------------------------------------")
+        report.append(tech.get("educational_insight"))
+        report.append("")
+
+    # SCAN JOURNEY TIMELINE
+    journey = tech.get("scan_journey")
+    if journey:
+        report.append("----------------------------------------------------------------------")
+        report.append("SCAN JOURNEY TIMELINE")
+        report.append("----------------------------------------------------------------------")
+        for stage in journey:
+            status_symbol = "[✓] PASSED"
+            if stage.get("status") == "triggered":
+                status_symbol = "[!] TRIGGERED"
+            elif stage.get("status") == "warning":
+                status_symbol = "[w] WARNING"
+            elif stage.get("status") == "critical":
+                status_symbol = "[x] CRITICAL"
+            elif stage.get("status") == "informational":
+                status_symbol = "[i] INFO"
+            
+            report.append(f"  {status_symbol:<13} • {stage.get('stage')}")
+            report.append(f"                Details: {stage.get('message')}")
+            report.append("")
+
     
     # 2. FINDINGS
     report.append("----------------------------------------------------------------------")

@@ -15,12 +15,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, isGuest, signOut, isLoading, deferredPrompt, setDeferredPrompt } = useAuthStore();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user && !isGuest) {
       router.push('/login');
     }
   }, [user, isGuest, isLoading, router]);
+
+  // Auth loading timeout guard — if auth takes >5s, force redirect to login
+  useEffect(() => {
+    if (!isLoading) return;
+    const timeout = setTimeout(() => {
+      if (!user && !isGuest) {
+        setAuthTimedOut(true);
+        router.push('/login');
+      }
+    }, 5000);
+    return () => clearTimeout(timeout);
+  }, [isLoading, user, isGuest, router]);
 
   // Close mobile navigation on route change
   useEffect(() => {

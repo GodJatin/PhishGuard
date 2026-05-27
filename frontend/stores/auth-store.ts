@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { User, Session } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase';
+import { safeGetItem, safeSetItem, safeRemoveItem } from '@/lib/utils/localStorage';
+
+const GUEST_KEY = 'phishguard_is_guest';
+const GUEST_SCANS_KEY = 'phishguard_guest_scans';
 
 interface AuthState {
   user: User | null;
@@ -28,12 +32,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   setLoading: (isLoading) => set({ isLoading }),
   setDeferredPrompt: (deferredPrompt) => set({ deferredPrompt }),
   setGuest: (isGuest) => {
-    if (typeof window !== 'undefined') {
-      if (isGuest) {
-        localStorage.setItem('phishguard_is_guest', 'true');
-      } else {
-        localStorage.removeItem('phishguard_is_guest');
-      }
+    if (isGuest) {
+      safeSetItem(GUEST_KEY, 'true');
+    } else {
+      safeRemoveItem(GUEST_KEY);
     }
     set({ isGuest });
   },
@@ -44,37 +46,42 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (error) {
       console.error('Error signing out from Supabase auth service:', error);
     }
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('phishguard_is_guest');
-      localStorage.removeItem('phishguard_guest_scans');
-    }
+    // Clean up all guest data on sign-out
+    safeRemoveItem(GUEST_KEY);
+    safeRemoveItem(GUEST_SCANS_KEY);
     set({ user: null, session: null, isGuest: false });
   },
   initialize: async () => {
     const supabase = createClient();
     try {
-      const isGuestStr = typeof window !== 'undefined' ? localStorage.getItem('phishguard_is_guest') : null;
-      const isGuest = isGuestStr === 'true';
-      
+      const isGuestStored = safeGetItem(GUEST_KEY) === 'true';
+
       const { data: { session } } = await supabase.auth.getSession();
-      set({ 
-        session, 
-        user: session?.user || null, 
-        isGuest: session?.user ? false : isGuest, 
-        isLoading: false 
+      // If there's a real session, never treat as guest regardless of localStorage
+      const resolvedGuest = session?.user ? false : isGuestStored;
+
+      set({
+        session,
+        user: session?.user || null,
+        isGuest: resolvedGuest,
+        isLoading: false
       });
 
-      supabase.auth.onAuthStateChange((_event, session) => {
-        set({ 
-          session, 
-          user: session?.user || null, 
-          isGuest: session?.user ? false : (typeof window !== 'undefined' ? localStorage.getItem('phishguard_is_guest') === 'true' : false),
-          isLoading: false 
+      supabase.auth.onAuthStateChange((_event, newSession) => {
+        // Re-read guest flag from storage on each auth state change
+        const currentGuestFlag = safeGetItem(GUEST_KEY) === 'true';
+        set({
+          session: newSession,
+          user: newSession?.user || null,
+          // If user is now authenticated, guest mode is always false
+          isGuest: newSession?.user ? false : currentGuestFlag,
+          isLoading: false
         });
       });
     } catch (error) {
-      console.error('Failed to initialize auth', error);
+      console.error('Failed to initialize auth:', error);
       set({ isLoading: false });
     }
   }
 }));
+

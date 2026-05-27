@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase';
 import { DBScan } from '@/types/scan';
 import Link from 'next/link';
@@ -8,7 +8,7 @@ import { motion, Variants } from 'framer-motion';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { History as HistoryIcon, Loader2, ShieldCheck, AlertTriangle, ShieldAlert, ChevronRight } from 'lucide-react';
+import { History as HistoryIcon, Loader2, ShieldCheck, AlertTriangle, ShieldAlert, ChevronRight, RefreshCw } from 'lucide-react';
 import DashboardLayout from '../dashboard/layout';
 
 const containerVariants: Variants = {
@@ -35,7 +35,8 @@ const itemVariants: Variants = {
 };
 
 export default function HistoryPage() {
-  const { data: scans, isLoading, isError } = useQuery<DBScan[]>({
+  const queryClient = useQueryClient();
+  const { data: scans, isLoading, isError, refetch } = useQuery<DBScan[]>({
     queryKey: ['history'],
     queryFn: async () => {
       const supabase = createClient();
@@ -49,6 +50,9 @@ export default function HistoryPage() {
       }
       return data;
     },
+    retry: 1,
+    retryDelay: 2000,
+    refetchOnWindowFocus: false,
   });
 
   const getStatusIcon = (status: string) => {
@@ -97,9 +101,24 @@ export default function HistoryPage() {
                 <p className="text-muted-foreground">Loading history...</p>
               </div>
             ) : isError ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center text-destructive">
-                <AlertTriangle className="w-8 h-8 mb-4" />
-                <p>Failed to load history. Please try again.</p>
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="relative mb-3">
+                  <div className="absolute inset-0 bg-red-500/10 rounded-full blur-xl" />
+                  <AlertTriangle className="w-9 h-9 text-red-400/70 relative z-10" />
+                </div>
+                <h3 className="text-sm font-semibold text-foreground/90 mb-1">Failed to load history</h3>
+                <p className="text-xs text-muted-foreground/60 max-w-[260px] mb-4">
+                  Could not connect to the database. Please check your connection and try again.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetch()}
+                  className="border-white/10 hover:bg-white/5 text-xs text-muted-foreground hover:text-foreground gap-2"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Retry
+                </Button>
               </div>
             ) : scans && scans.length > 0 ? (
               <motion.div 

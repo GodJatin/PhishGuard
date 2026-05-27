@@ -181,6 +181,107 @@ def calculate_ml_scoring_breakdown(feats: Dict[str, Any], score: int) -> List[Di
             
     return breakdown
 
+FEATURE_LABELS = {
+    "url_length": "URL Length",
+    "subdomain_count": "Subdomain Structure",
+    "https": "SSL/HTTPS Encryption",
+    "contains_ip": "IP-based Hostname",
+    "suspicious_keyword_count": "Deceptive Keywords",
+    "special_char_count": "Special Character Density",
+    "digit_count": "Digit Density",
+    "hyphen_count": "Hyphen Count",
+    "redirect_pattern": "Redirection Patterns",
+    "suspicious_tld": "Untrusted Top-Level Domain",
+    "encoded_char_presence": "Encoded/Obfuscated Characters",
+    "at_symbol": "Credential Masking (@)",
+    "path_depth": "Directory Path Depth",
+    "query_parameter_count": "Query Parameters",
+    "entropy_score": "URL String Randomness (Entropy)"
+}
+
+def extract_feature_importances(model, feats: Dict[str, Any], score: int) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    Computes feature importances and builds a human-readable explanation and summary.
+    """
+    importances = getattr(model, "feature_importances_", None)
+    if importances is None:
+        importances = [1.0 / len(feature_extractor.FEATURE_NAMES)] * len(feature_extractor.FEATURE_NAMES)
+        
+    activated_features = {}
+    for name in feature_extractor.FEATURE_NAMES:
+        val = feats.get(name, 0)
+        is_active = False
+        if name == "https" and val == 0:
+            is_active = True
+        elif name == "contains_ip" and val == 1:
+            is_active = True
+        elif name == "suspicious_keyword_count" and val > 0:
+            is_active = True
+        elif name == "redirect_pattern" and val == 1:
+            is_active = True
+        elif name == "suspicious_tld" and val == 1:
+            is_active = True
+        elif name == "encoded_char_presence" and val == 1:
+            is_active = True
+        elif name == "at_symbol" and val == 1:
+            is_active = True
+        elif name == "subdomain_count" and val > 2:
+            is_active = True
+        elif name == "url_length" and val > 75:
+            is_active = True
+        elif name == "special_char_count" and val > 10:
+            is_active = True
+        elif name == "digit_count" and val > 5:
+            is_active = True
+        elif name == "hyphen_count" and val > 3:
+            is_active = True
+        elif name == "path_depth" and val > 3:
+            is_active = True
+        elif name == "query_parameter_count" and val > 2:
+            is_active = True
+        elif name == "entropy_score" and val > 4.2:
+            is_active = True
+            
+        activated_features[name] = is_active
+
+    raw_influences = []
+    for idx, name in enumerate(feature_extractor.FEATURE_NAMES):
+        importance = importances[idx]
+        is_active = activated_features.get(name, False)
+        # Dynamic weighting based on active feature status
+        influence = importance * (2.5 if is_active else 0.2)
+        raw_influences.append((name, influence))
+        
+    raw_influences.sort(key=lambda x: x[1], reverse=True)
+    top_features = raw_influences[:6]
+    total_influence = sum(inf for _, inf in top_features)
+    
+    formatted_features = []
+    for name, inf in top_features:
+        pct = (inf / total_influence) * 100 if total_influence > 0 else 0
+        formatted_features.append({
+            "feature": name,
+            "label": FEATURE_LABELS.get(name, name),
+            "contribution_pct": round(pct, 1),
+            "is_active": activated_features.get(name, False)
+        })
+        
+    formatted_features.sort(key=lambda x: x["contribution_pct"], reverse=True)
+    
+    active_labels = [f["label"].lower() for f in formatted_features if f["is_active"]][:3]
+    if score < 35:
+        interpretation = "Clean structural attributes and secure connection indicate a safe URL."
+    else:
+        if active_labels:
+            if len(active_labels) >= 2:
+                interpretation = f"High {active_labels[0]} and deceptive {active_labels[1]} significantly increased the phishing probability."
+            else:
+                interpretation = f"Deceptive {active_labels[0]} patterns detected in the URL structure increased the phishing probability."
+        else:
+            interpretation = "ML classification indicates potential phishing patterns in URL string layout."
+            
+    return formatted_features, interpretation
+
 def predict_url(url: str) -> Tuple[str, int, float, Dict[str, Any], List[str], str]:
     """
     Runs model inference on a URL.
@@ -233,6 +334,11 @@ def predict_url(url: str) -> Tuple[str, int, float, Dict[str, Any], List[str], s
     # Generate scoring breakdown
     feats["scoring_breakdown"] = calculate_ml_scoring_breakdown(feats, score)
     
+    # Phase 9: Feature Importance & ML Interpretation
+    importances_list, interpretation = extract_feature_importances(model, feats, score)
+    feats["feature_importances"] = importances_list
+    feats["ml_interpretation"] = interpretation
+    
     # 6. Contextual Recommendation mapping
     from app.services.rule_engine import patterns, constants
     from app.services import recommendation_engine
@@ -259,4 +365,3 @@ def predict_url(url: str) -> Tuple[str, int, float, Dict[str, Any], List[str], s
     )
     
     return status, score, confidence, feats, reasons, recommendation
-

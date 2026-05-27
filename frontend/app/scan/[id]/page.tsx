@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase';
 import axios from '@/lib/api/axios';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { safeParseJSON } from '@/lib/utils/localStorage';
 import { 
   ArrowLeft, ShieldCheck, AlertTriangle, ShieldAlert, Info, 
   Activity, Search, Download, Loader2, FileText, Code, FileCode, CheckCircle2,
@@ -17,6 +18,57 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'react-hot-toast';
 import DashboardLayout from '@/app/dashboard/layout';
 import { ScanResult } from '@/types/scan';
+
+const getSeverityConfig = (tier: string = 'Low') => {
+  switch (tier.toLowerCase()) {
+    case 'informational':
+      return {
+        bg: 'bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.15)]',
+        label: 'Informational',
+        dot: 'bg-blue-400'
+      };
+    case 'low':
+      return {
+        bg: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]',
+        label: 'Low Severity',
+        dot: 'bg-emerald-400'
+      };
+    case 'medium':
+      return {
+        bg: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 shadow-[0_0_15px_rgba(245,158,11,0.15)]',
+        label: 'Medium Severity',
+        dot: 'bg-yellow-400'
+      };
+    case 'high':
+      return {
+        bg: 'bg-orange-500/10 border-orange-500/30 text-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.15)]',
+        label: 'High Severity',
+        dot: 'bg-orange-400'
+      };
+    case 'critical':
+      return {
+        bg: 'bg-red-500/10 border-red-500/30 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.2)]',
+        label: 'Critical Threat',
+        dot: 'bg-red-400'
+      };
+    default:
+      return {
+        bg: 'bg-muted border-border text-muted-foreground',
+        label: tier,
+        dot: 'bg-muted-foreground'
+      };
+  }
+};
+
+const getConsensusExplanation = (consensus: string, diff: number) => {
+  if (consensus === 'Strong Consensus') {
+    return `Both engines strongly agree on the phishing likelihood of this domain. Deterministic rules match statistical anomalies at ${100 - diff}% consistency.`;
+  } else if (consensus === 'Moderate Confidence') {
+    return `Engines show moderate consensus (score difference: ${diff} pts). Traditional pattern heuristics are mostly aligned with the ML model's predictive variables.`;
+  } else {
+    return `Engines show weak consensus (score difference: ${diff} pts). ML analysis identified additional structural anomalies that bypassed traditional deterministic rules.`;
+  }
+};
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -33,22 +85,13 @@ export default function DetailedReportPage({ params }: PageProps) {
   const [localScan, setLocalScan] = useState<ScanResult | null>(null);
   const [isLocalLoading, setIsLocalLoading] = useState(isGuestMode);
 
-  // Load from local storage for guests
+  // Load from local storage for guests safely
   useEffect(() => {
     if (isGuestMode) {
-      if (typeof window !== 'undefined') {
-        const stored = localStorage.getItem('phishguard_guest_scans');
-        if (stored) {
-          try {
-            const scans: ScanResult[] = JSON.parse(stored);
-            const match = scans.find(s => s.scan_id === id);
-            if (match) {
-              setLocalScan(match);
-            }
-          } catch (e) {
-            console.error('Failed to parse guest scans from localStorage', e);
-          }
-        }
+      const scans = safeParseJSON<ScanResult[]>('phishguard_guest_scans', []);
+      const match = scans.find((s) => s.scan_id === id);
+      if (match) {
+        setLocalScan(match);
       }
       setIsLocalLoading(false);
     }
@@ -131,21 +174,21 @@ export default function DetailedReportPage({ params }: PageProps) {
       
       toast.success(`${format.toUpperCase()} downloaded successfully`, { id: toastId });
     } catch (err: any) {
-      console.error(err);
-      
-      let errorMessage = `Export failed`;
-      if (err.response?.data instanceof Blob) {
+      let errorMessage: string;
+
+      // Use normalized message from axios interceptor when available
+      if (err.userMessage) {
+        errorMessage = err.userMessage;
+      } else if (err.response?.data instanceof Blob) {
         try {
           const text = await err.response.data.text();
           const parsed = JSON.parse(text);
-          if (parsed && parsed.detail) {
-            errorMessage = parsed.detail;
-          } else {
-            errorMessage = `Export failed with status ${err.response.status}`;
-          }
-        } catch (parseErr) {
-          if (err.response.status === 403) {
+          errorMessage = parsed?.detail || parsed?.message || `Export failed with status ${err.response.status}`;
+        } catch {
+          if (err.response?.status === 403) {
             errorMessage = 'Access denied. You do not own this scan report.';
+          } else if (err.response?.status === 404) {
+            errorMessage = 'Scan report not found. It may have been deleted.';
           } else {
             errorMessage = `Export failed: Server returned status code ${err.response.status}`;
           }
@@ -154,8 +197,10 @@ export default function DetailedReportPage({ params }: PageProps) {
         errorMessage = err.response.data.detail;
       } else if (err.message) {
         errorMessage = err.message;
+      } else {
+        errorMessage = `Export failed. Please try again.`;
       }
-      
+
       toast.error(errorMessage, { id: toastId });
     } finally {
       setIsExporting(null);
@@ -329,15 +374,43 @@ export default function DetailedReportPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* 1. Threat Severity Banner */}
-        <div className={`flex items-center gap-3 p-4 rounded-lg border ${statusCfg.bannerBg} backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300`}>
-          <div className="flex-shrink-0">
-            {statusCfg.icon}
+        {/* 1. Threat Severity & Category Header */}
+        <div className={`p-5 rounded-lg border ${statusCfg.bannerBg} backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg`}>
+          {/* Subtle background element */}
+          <div className="absolute right-0 top-0 w-24 h-24 bg-white/[0.02] rounded-full -mr-8 -mt-8 pointer-events-none" />
+          
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-lg bg-black/20 border border-white/5 flex-shrink-0 mt-1">
+              {statusCfg.icon}
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-extrabold text-sm sm:text-base tracking-tight">
+                  {statusCfg.statusText}
+                </h3>
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getSeverityConfig(scan.technical_details?.severity_tier || (scan.score >= 80 ? 'Critical' : (scan.score >= 60 ? 'High' : (scan.score >= 40 ? 'Medium' : (scan.score >= 20 ? 'Low' : 'Informational'))))).bg}`}>
+                  {scan.technical_details?.severity_tier || (scan.score >= 80 ? 'Critical' : (scan.score >= 60 ? 'High' : (scan.score >= 40 ? 'Medium' : (scan.score >= 20 ? 'Low' : 'Informational'))))}
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm font-mono">
+                Primary Classification: <span className="underline font-bold text-white">{scan.technical_details?.threat_category || (scan.status.toUpperCase() === 'SAFE' ? 'Safe Domain' : 'Generic Phishing Attempt')}</span>
+              </p>
+              <p className="text-xs opacity-80 leading-relaxed max-w-2xl">
+                {statusCfg.explanation}
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-bold text-sm sm:text-base">{statusCfg.statusText}</h3>
-            <p className="text-xs sm:text-sm opacity-90">{statusCfg.explanation}</p>
-          </div>
+          
+          {/* Secondary indicators */}
+          {scan.technical_details?.secondary_threat_tags && scan.technical_details.secondary_threat_tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 md:max-w-[40%] justify-start md:justify-end self-start md:self-center">
+              {scan.technical_details.secondary_threat_tags.map((tag: string, i: number) => (
+                <span key={i} className="px-2 py-0.5 text-[10px] font-semibold rounded bg-white/5 border border-white/10 text-muted-foreground font-mono">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 2. Scan Metadata Row */}
@@ -360,8 +433,57 @@ export default function DetailedReportPage({ params }: PageProps) {
           </div>
         </div>
 
+        {/* Threat Intelligence Alert Panels (Phase 9) */}
+        {(scan.technical_details.is_whitelisted || scan.technical_details.is_blacklisted || scan.technical_details.brand_spoof_detected) && (
+          <div className="grid grid-cols-1 gap-4 animate-in fade-in duration-300">
+            {scan.technical_details.is_whitelisted && (
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-green-500/30 bg-green-500/10 text-green-300">
+                <CheckCircle2 className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-xs uppercase tracking-wider font-mono">Verified Safe Domain (Whitelist)</h4>
+                  <p className="text-sm font-mono text-green-100/90">{scan.technical_details.whitelist_reason}</p>
+                </div>
+              </div>
+            )}
+            {scan.technical_details.is_blacklisted && (
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300">
+                <ShieldAlert className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-xs uppercase tracking-wider font-mono">Known Malicious Domain (Blacklist)</h4>
+                  <p className="text-sm font-mono text-red-100/90">
+                    Source: <span className="font-bold">{scan.technical_details.blacklist_source}</span>
+                  </p>
+                  {scan.technical_details.intelligence_flags && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {scan.technical_details.intelligence_flags.map((flag, i) => (
+                        <span key={i} className="px-2 py-0.5 text-[10px] rounded bg-red-950/60 border border-red-500/30 text-red-400 font-mono">
+                          {flag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {scan.technical_details.brand_spoof_detected && (
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-300">
+                <AlertTriangle className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-xs uppercase tracking-wider font-mono">Brand Spoof / Deceptive Domain Detected</h4>
+                  <p className="text-sm font-mono text-yellow-100/90">{scan.technical_details.spoof_explanation}</p>
+                  <div className="pt-2 flex items-center gap-4 text-xs font-mono uppercase font-bold text-yellow-400">
+                    <span>Impersonated: {scan.technical_details.suspected_brand}</span>
+                    <span>Spoof Type: {scan.technical_details.spoof_type}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Subject URL Widget */}
         <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
+
           <CardHeader className="py-4">
             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Audit Subject URL
@@ -377,6 +499,35 @@ export default function DetailedReportPage({ params }: PageProps) {
         {/* 3. Render Custom Comparison View or Standard View */}
         {scan.scan_type === 'comparison' ? (
           <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Why This Matters Educational Insight Block */}
+            {scan.technical_details?.educational_insight && (
+              <div className="p-5 rounded-lg border border-purple-500/20 bg-purple-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(168,85,247,0.05)]">
+                <div className="p-3 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 mt-1 flex-shrink-0">
+                  <Brain className="w-6 h-6 animate-pulse" />
+                </div>
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest font-mono">
+                      Threat Intel Assessment: {scan.technical_details?.threat_category || 'Generic Phishing'}
+                    </h4>
+                    {scan.technical_details?.secondary_threat_tags && scan.technical_details.secondary_threat_tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {scan.technical_details.secondary_threat_tags.map((tag: string, i: number) => (
+                          <span key={i} className="px-2 py-0.5 text-[9px] rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 font-mono">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-bold text-purple-200">Why This Matters:</h3>
+                  <p className="text-xs sm:text-sm leading-relaxed text-purple-100/90 font-mono">
+                    {scan.technical_details.educational_insight}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Side-by-Side scoreboard card headers */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Heuristics Card */}
@@ -432,19 +583,86 @@ export default function DetailedReportPage({ params }: PageProps) {
               <div className="p-3 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 mt-1 flex-shrink-0">
                 <Info className="w-6 h-6 animate-pulse" />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 flex-1 min-w-0">
                 <h4 className="text-xs font-bold text-blue-400 uppercase tracking-widest font-mono">
-                  Unified Risk Correlation Assessment
+                  Unified Risk Correlation & Consensus Assessment
                 </h4>
-                <p className="text-sm leading-relaxed text-blue-100/90 font-mono">
-                  {scan.recommendation}
+                <p className="text-sm font-bold text-white font-mono">
+                  Consensus State: {scan.technical_details?.consensus_level || 'Moderate Confidence'}
                 </p>
-                <div className="pt-2 text-[10px] text-blue-300 flex flex-wrap gap-x-4 gap-y-1 font-mono uppercase font-bold tracking-wider">
-                  <span>Score difference: {scan.technical_details.score_difference || 0} points</span>
-                  <span>Risk postura: {scan.status}</span>
+                <p className="text-xs text-blue-100/90 leading-relaxed font-mono">
+                  {getConsensusExplanation(scan.technical_details?.consensus_level || 'Moderate Confidence', scan.technical_details?.score_difference || 0)}
+                </p>
+                <p className="text-xs leading-relaxed text-blue-200/90 font-mono pt-1">
+                  💡 Recommendation: {scan.recommendation}
+                </p>
+                <div className="pt-2 text-[10px] text-blue-300 flex flex-wrap gap-x-4 gap-y-1 font-mono uppercase font-bold tracking-wider border-t border-blue-500/10 mt-2">
+                  <span>Score difference: {scan.technical_details?.score_difference || 0} points</span>
+                  <span>Unified Risk Status: {scan.status}</span>
                 </div>
               </div>
             </div>
+
+            {/* Scan Journey Timeline */}
+            {scan.technical_details?.scan_journey && (
+              <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
+                <CardHeader className="py-4 border-b border-white/5">
+                  <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-blue-400" />
+                    Progressive Scan Journey Timeline
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6 pb-6">
+                  <div className="relative border-l border-white/10 pl-6 ml-3 space-y-6">
+                    {scan.technical_details.scan_journey.map((step: any, idx: number) => {
+                      let icon = <Info className="w-4 h-4 text-cyan-400" />;
+                      let colorClass = "text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
+                      
+                      if (step.status === 'passed') {
+                        icon = <CheckCircle2 className="w-4 h-4 text-emerald-400" />;
+                        colorClass = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+                      } else if (step.status === 'triggered' || step.status === 'critical') {
+                        icon = <ShieldAlert className="w-4 h-4 text-red-400" />;
+                        colorClass = "text-red-400 bg-red-500/10 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.15)]";
+                      } else if (step.status === 'warning') {
+                        icon = <AlertTriangle className="w-4 h-4 text-amber-400" />;
+                        colorClass = "text-amber-400 bg-amber-500/10 border-amber-500/20";
+                      } else if (step.status === 'informational') {
+                        icon = <Info className="w-4 h-4 text-blue-400" />;
+                        colorClass = "text-blue-400 bg-blue-500/10 border-blue-500/20";
+                      }
+
+                      return (
+                        <div key={idx} className="relative group transition-all duration-300">
+                          {/* Timeline Node Icon */}
+                          <div className={`absolute -left-[35px] top-0.5 rounded-full p-1 border flex items-center justify-center ${colorClass}`}>
+                            {icon}
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-bold text-foreground/90 font-mono">
+                                {step.stage}
+                              </h4>
+                              <span className={`text-[9px] uppercase tracking-wider font-mono font-bold px-1.5 py-0.5 rounded ${
+                                step.status === 'passed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15' :
+                                (step.status === 'triggered' || step.status === 'critical') ? 'bg-red-500/10 text-red-400 border border-red-500/15' :
+                                step.status === 'warning' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/15' :
+                                'bg-blue-500/10 text-blue-400 border border-blue-500/15'
+                              }`}>
+                                {step.status}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {step.message}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Cross-engine threat indicator checklist */}
             <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
@@ -503,9 +721,57 @@ export default function DetailedReportPage({ params }: PageProps) {
               </CardContent>
             </Card>
 
+            {/* ML Feature Importance and Model Explainability Panel (Phase 9) */}
+            {scan.technical_details.feature_importances && scan.technical_details.feature_importances.length > 0 && (
+              <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
+                <CardHeader className="border-b border-white/10 py-4">
+                  <CardTitle className="text-xs font-bold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                    <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
+                    Machine Learning Model Feature Importance
+                  </CardTitle>
+                  <CardDescription className="text-xs text-muted-foreground/70">
+                    Calculated feature contribution percentages to this specific classification.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-5 space-y-4">
+                  {scan.technical_details.feature_importances.map((item, idx) => (
+                    <div key={idx} className="space-y-1.5">
+                      <div className="flex justify-between items-center text-xs sm:text-sm">
+                        <span className="text-foreground/90 font-medium font-mono flex items-center gap-2">
+                          <span className={item.is_active ? "text-purple-400 font-bold" : "text-muted-foreground/50"}>•</span>
+                          {item.label}
+                          {item.is_active && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold border border-purple-500/20 bg-purple-500/10 text-purple-400 uppercase tracking-widest">
+                              Triggered
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-bold font-mono text-purple-400">
+                          {item.contribution_pct}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full ${item.is_active ? 'bg-gradient-to-r from-purple-500 to-indigo-500 animate-pulse' : 'bg-purple-900/60'}`}
+                          style={{ width: `${item.contribution_pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {scan.technical_details.ml_interpretation && (
+                    <div className="mt-4 p-3 rounded bg-purple-500/5 border border-purple-500/15 text-xs text-purple-300 font-mono italic">
+                      💡 ML Interpretation: "{scan.technical_details.ml_interpretation}"
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Ledgers side by side */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
+
                 <CardHeader className="py-3 border-b border-white/5">
                   <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Heuristic Rules Log
@@ -648,6 +914,96 @@ export default function DetailedReportPage({ params }: PageProps) {
             {/* Main Column */}
             <div className="lg:col-span-2 space-y-6">
               
+              {/* Why This Matters Educational Insight Block */}
+              {scan.technical_details?.educational_insight && (
+                <div className="p-5 rounded-lg border border-purple-500/20 bg-purple-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(168,85,247,0.05)] animate-in fade-in duration-300">
+                  <div className="p-3 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 mt-1 flex-shrink-0">
+                    <Brain className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-purple-400 uppercase tracking-widest font-mono">
+                        Threat Intel Assessment: {scan.technical_details?.threat_category || 'Generic Phishing'}
+                      </h4>
+                      {scan.technical_details?.secondary_threat_tags && scan.technical_details.secondary_threat_tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {scan.technical_details.secondary_threat_tags.map((tag: string, i: number) => (
+                            <span key={i} className="px-2 py-0.5 text-[9px] rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 font-mono">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <h3 className="text-sm font-bold text-purple-200">Why This Matters:</h3>
+                    <p className="text-xs sm:text-sm leading-relaxed text-purple-100/90 font-mono">
+                      {scan.technical_details.educational_insight}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Scan Journey Timeline */}
+              {scan.technical_details?.scan_journey && (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl animate-in fade-in duration-300">
+                  <CardHeader className="py-4 border-b border-white/5">
+                    <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <Activity className="w-3.5 h-3.5 text-blue-400" />
+                      Progressive Scan Journey Timeline
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-6 pb-6">
+                    <div className="relative border-l border-white/10 pl-6 ml-3 space-y-6">
+                      {scan.technical_details.scan_journey.map((step: any, idx: number) => {
+                        let icon = <Info className="w-4 h-4 text-cyan-400" />;
+                        let colorClass = "text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
+                        
+                        if (step.status === 'passed') {
+                          icon = <CheckCircle2 className="w-4 h-4 text-emerald-400" />;
+                          colorClass = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+                        } else if (step.status === 'triggered' || step.status === 'critical') {
+                          icon = <ShieldAlert className="w-4 h-4 text-red-400" />;
+                          colorClass = "text-red-400 bg-red-500/10 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.15)]";
+                        } else if (step.status === 'warning') {
+                          icon = <AlertTriangle className="w-4 h-4 text-amber-400" />;
+                          colorClass = "text-amber-400 bg-amber-500/10 border-amber-500/20";
+                        } else if (step.status === 'informational') {
+                          icon = <Info className="w-4 h-4 text-blue-400" />;
+                          colorClass = "text-blue-400 bg-blue-500/10 border-blue-500/20";
+                        }
+
+                        return (
+                          <div key={idx} className="relative group transition-all duration-300">
+                            {/* Timeline Node Icon */}
+                            <div className={`absolute -left-[35px] top-0.5 rounded-full p-1 border flex items-center justify-center ${colorClass}`}>
+                              {icon}
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-sm font-bold text-foreground/90 font-mono">
+                                  {step.stage}
+                                </h4>
+                                <span className={`text-[9px] uppercase tracking-wider font-mono font-bold px-1.5 py-0.5 rounded ${
+                                  step.status === 'passed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15' :
+                                  (step.status === 'triggered' || step.status === 'critical') ? 'bg-red-500/10 text-red-400 border border-red-500/15' :
+                                  step.status === 'warning' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/15' :
+                                  'bg-blue-500/10 text-blue-400 border border-blue-500/15'
+                                }`}>
+                                  {step.status}
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground leading-relaxed">
+                                {step.message}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              
               {/* Findings Panel */}
               <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
                 <CardHeader className="border-b border-white/10 py-4">
@@ -715,10 +1071,58 @@ export default function DetailedReportPage({ params }: PageProps) {
                   </CardContent>
                 </Card>
               )}
+
+              {/* ML Feature Importance and Model Explainability Panel (Phase 9) */}
+              {scan.technical_details.feature_importances && scan.technical_details.feature_importances.length > 0 && (
+                <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
+                  <CardHeader className="border-b border-white/10 py-4">
+                    <CardTitle className="text-xs font-bold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                      <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
+                      Machine Learning Model Feature Importance
+                    </CardTitle>
+                    <CardDescription className="text-xs text-muted-foreground/70">
+                      Calculated feature contribution percentages to this specific classification.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-5 space-y-4">
+                    {scan.technical_details.feature_importances.map((item, idx) => (
+                      <div key={idx} className="space-y-1.5">
+                        <div className="flex justify-between items-center text-xs sm:text-sm">
+                          <span className="text-foreground/90 font-medium font-mono flex items-center gap-2">
+                            <span className={item.is_active ? "text-purple-400 font-bold" : "text-muted-foreground/50"}>•</span>
+                            {item.label}
+                            {item.is_active && (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-bold border border-purple-500/20 bg-purple-500/10 text-purple-400 uppercase tracking-widest">
+                                Triggered
+                              </span>
+                            )}
+                          </span>
+                          <span className="font-bold font-mono text-purple-400">
+                            {item.contribution_pct}%
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full ${item.is_active ? 'bg-gradient-to-r from-purple-500 to-indigo-500 animate-pulse' : 'bg-purple-900/60'}`}
+                            style={{ width: `${item.contribution_pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {scan.technical_details.ml_interpretation && (
+                      <div className="mt-4 p-3 rounded bg-purple-500/5 border border-purple-500/15 text-xs text-purple-300 font-mono italic">
+                        💡 ML Interpretation: "{scan.technical_details.ml_interpretation}"
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Sidebar Column */}
             <div className="space-y-6">
+
               
               {/* Score Summary Panel */}
               <Card className={`border-white/10 bg-black/40 backdrop-blur-xl transition-all duration-500 ${
@@ -744,6 +1148,12 @@ export default function DetailedReportPage({ params }: PageProps) {
                       <div className="mt-3 px-3 py-1 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-blue-500/10 border border-blue-500/20 text-blue-400">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
                         Model Confidence: {(scan.confidence * 100).toFixed(1)}%
+                      </div>
+                    )}
+                    {scan.technical_details?.consensus_level && (
+                      <div className="mt-2 px-3 py-1 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                        Consensus: {scan.technical_details.consensus_level}
                       </div>
                     )}
                   </div>
