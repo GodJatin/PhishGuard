@@ -3,18 +3,21 @@ backend/venv/
 backend/env/
 backend/ENV/
 backend/__pycache__/
-backend/**/*.pyc
-backend/**/*.pyo
-backend/**/*.pyd
+backend/**/*.py[cod]
 backend/.pytest_cache/
 backend/.env
+backend/.env.*
+
+# Generated files
+backend/reports/generated/*.pdf
 
 # Node / Next.js
 frontend/node_modules/
 frontend/.next/
 frontend/out/
 frontend/build/
-frontend/.env*
+frontend/.env
+frontend/.env.*
 frontend/*.tsbuildinfo
 frontend/next-env.d.ts
 frontend/npm-debug.log*
@@ -25,3 +28,13 @@ frontend/.pnpm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Editor & IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

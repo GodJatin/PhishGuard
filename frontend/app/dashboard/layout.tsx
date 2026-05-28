@@ -71,8 +71,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const handleInstallApp = async () => {
     if (deferredPrompt) {
       deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      console.log(`[PWA] Install prompt outcome: ${outcome}`);
+      await deferredPrompt.userChoice;
       setDeferredPrompt(null);
     }
   };
@@ -91,7 +90,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-background/80 backdrop-blur-md">
+      <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-background/80 backdrop-blur-md pt-[env(safe-area-inset-top)]">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <Link href="/dashboard" className="flex items-center gap-2">
@@ -251,7 +250,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 w-full relative">
+      <main className="flex-1 w-full relative pb-[env(safe-area-inset-bottom)]">
         <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-emerald-950/15 to-transparent pointer-events-none" />
         <motion.div
           key={pathname}

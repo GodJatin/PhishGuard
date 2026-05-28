@@ -31,8 +31,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       if (!('serviceWorker' in navigator)) return;
 
       try {
-        const registration = await navigator.serviceWorker.register('/sw.js');
-        console.log('[PWA] Service Worker registered with scope:', registration.scope);
+        await navigator.serviceWorker.register('/sw.js');
       } catch (err) {
         // Non-fatal — app works fine without SW
         console.warn('[PWA] Service Worker registration failed:', err);
@@ -50,7 +49,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     const handleInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      console.log('[PWA] Intercepted install prompt. Ready for custom trigger.');
     };
 
     window.addEventListener('beforeinstallprompt', handleInstallPrompt);

@@ -484,26 +484,127 @@ export default function DashboardPage() {
     : recentThreats;
   const isRecentThreatsActiveLoading = isGuest ? false : isRecentThreatsLoading;
 
-  const displayEmptyState = (title: string, description: string, buttonText: string) => (
-    <div className="flex flex-col items-center justify-center h-[280px] text-center p-6 border border-dashed border-white/10 rounded-xl bg-white/[0.01] transition-all hover:bg-white/[0.02]">
-      <div className="relative mb-3">
-        <div className="absolute inset-0 bg-emerald-500/10 rounded-full blur-xl animate-pulse" />
-        <Shield className="w-9 h-9 text-emerald-500/60 relative z-10" />
+  const displayEmptyState = (title: string, description: string, buttonText: string, type?: 'timeline' | 'severity' | 'engine') => {
+    if (type === 'timeline') {
+      return (
+        <div className="flex flex-col items-center justify-center h-[270px] text-center p-4 border border-dashed border-white/10 rounded-xl bg-white/[0.01] hover:bg-white/[0.02] transition-all relative overflow-hidden">
+          <div className="w-full max-w-md space-y-3 font-mono text-[10px] text-left">
+            <div className="text-muted-foreground/40 border-b border-white/5 pb-1 mb-2 uppercase tracking-wider text-center font-bold">Scanning Journey Timeline</div>
+            <div className="space-y-1 text-muted-foreground/60">
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/50 animate-pulse" />
+                <span>Step 1: Whitelist Bypass verification (0ms)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500/50 animate-pulse" />
+                <span>Step 2: Dual-engine parallel execution</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500/50 animate-pulse" />
+                <span>Step 3: Model output weight consensus</span>
+              </div>
+            </div>
+            <div className="pt-2 text-center">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => inputRef.current?.focus()}
+                className="border-white/10 hover:bg-white/5 text-[10px] text-muted-foreground hover:text-foreground font-mono transition-all active:scale-95 px-3 py-1 h-7 cursor-pointer"
+              >
+                {buttonText}
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if (type === 'severity') {
+      return (
+        <div className="flex flex-col items-center justify-center h-[270px] text-center p-4 border border-dashed border-white/10 rounded-xl bg-white/[0.01] hover:bg-white/[0.02] transition-all relative overflow-hidden">
+          <div className="w-full max-w-md space-y-2.5 font-mono text-[10px] text-left">
+            <div className="text-muted-foreground/40 border-b border-white/5 pb-1 mb-1.5 uppercase tracking-wider text-center font-bold">Classification Indicators</div>
+            <div className="grid grid-cols-2 gap-2 text-[9px] text-muted-foreground/60">
+              <div className="p-1.5 border border-white/5 bg-white/[0.01] rounded">
+                <span className="text-red-400 font-bold block">CREDENTIAL THEFT</span>
+                Harvesting fields detected.
+              </div>
+              <div className="p-1.5 border border-white/5 bg-white/[0.01] rounded">
+                <span className="text-amber-400 font-bold block">BRAND SPOOFING</span>
+                Homoglyph patterns active.
+              </div>
+              <div className="p-1.5 border border-white/5 bg-white/[0.01] rounded">
+                <span className="text-red-400 font-bold block">FINANCIAL FRAUD</span>
+                Bank integration vectors.
+              </div>
+              <div className="p-1.5 border border-white/5 bg-white/[0.01] rounded">
+                <span className="text-cyan-400 font-bold block">URL OBFUSCATION</span>
+                Complex subdomain depth.
+              </div>
+            </div>
+            <div className="text-center pt-1">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => inputRef.current?.focus()}
+                className="border-white/10 hover:bg-white/5 text-[10px] text-muted-foreground hover:text-foreground font-mono transition-all active:scale-95 px-3 py-1 h-7 cursor-pointer"
+              >
+                {buttonText}
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if (type === 'engine') {
+      return (
+        <div className="flex flex-col items-center justify-center h-[210px] text-center p-4 border border-dashed border-white/10 rounded-xl bg-white/[0.01] hover:bg-white/[0.02] transition-all relative overflow-hidden">
+          <div className="w-full max-w-md space-y-2.5 font-mono text-[9px] text-left">
+            <div className="text-muted-foreground/40 border-b border-white/5 pb-1 mb-1 uppercase tracking-wider text-center font-bold">Engine Specifications</div>
+            <div className="space-y-1.5 text-muted-foreground/70">
+              <div className="flex justify-between items-start border-b border-white/[0.02] pb-1">
+                <span className="font-bold text-cyan-400">Heuristics:</span>
+                <span>Regex signatures, TLD checks, keyword score</span>
+              </div>
+              <div className="flex justify-between items-start">
+                <span className="font-bold text-emerald-400">Machine Learning:</span>
+                <span>RandomForest inference, 15 structure features</span>
+              </div>
+            </div>
+            <div className="text-center pt-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => inputRef.current?.focus()}
+                className="border-white/10 hover:bg-white/5 text-[10px] text-muted-foreground hover:text-foreground font-mono transition-all active:scale-95 px-3 py-1 h-7 cursor-pointer"
+              >
+                {buttonText}
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col items-center justify-center h-[280px] text-center p-6 border border-dashed border-white/10 rounded-xl bg-white/[0.01] transition-all hover:bg-white/[0.02]">
+        <div className="relative mb-3">
+          <div className="absolute inset-0 bg-emerald-500/10 rounded-full blur-xl animate-pulse" />
+          <Shield className="w-9 h-9 text-emerald-500/60 relative z-10" />
+        </div>
+        <h3 className="text-sm font-semibold text-foreground/90 mb-1">{title}</h3>
+        <p className="text-xs text-muted-foreground/60 max-w-[240px] mb-3.5">
+          {description}
+        </p>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => inputRef.current?.focus()}
+          className="border-white/10 hover:bg-white/5 text-xs text-muted-foreground hover:text-foreground font-mono focus-visible:ring-1 focus-visible:ring-white/20 transition-all active:scale-95 cursor-pointer"
+        >
+          {buttonText}
+        </Button>
       </div>
-      <h3 className="text-sm font-semibold text-foreground/90 mb-1">{title}</h3>
-      <p className="text-xs text-muted-foreground/60 max-w-[240px] mb-3.5">
-        {description}
-      </p>
-      <Button 
-        variant="outline" 
-        size="sm" 
-        onClick={() => inputRef.current?.focus()}
-        className="border-white/10 hover:bg-white/5 text-xs text-muted-foreground hover:text-foreground font-mono focus-visible:ring-1 focus-visible:ring-white/20 transition-all active:scale-95"
-      >
-        {buttonText}
-      </Button>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl space-y-8 relative z-10">
@@ -512,7 +613,7 @@ export default function DashboardPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-emerald-500 text-xs font-mono font-bold uppercase tracking-widest">
-            <Terminal className="w-3.5 h-3.5" /> Security Operations Center
+            <Terminal className="w-3.5 h-3.5 text-emerald-400" /> Security Operations Center
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             {isGuest ? "Welcome, Guest Agent" : `Welcome, Agent ${userName}`}
@@ -524,9 +625,28 @@ export default function DashboardPage() {
             }
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg text-xs font-mono">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-          Threat Database Active
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1.5 bg-[#111215]/80 border border-white/5 px-2.5 py-1.5 rounded-lg text-[10px] font-mono text-muted-foreground">
+            <span>Heuristic Core:</span>
+            <span className="flex items-center gap-1 text-emerald-400 font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDuration: '3s' }} />
+              ACTIVE
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 bg-[#111215]/80 border border-white/5 px-2.5 py-1.5 rounded-lg text-[10px] font-mono text-muted-foreground">
+            <span>ML Classifier:</span>
+            <span className="flex items-center gap-1 text-emerald-400 font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDuration: '4s' }} />
+              NOMINAL
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 bg-[#111215]/80 border border-white/5 px-2.5 py-1.5 rounded-lg text-[10px] font-mono text-muted-foreground">
+            <span>Feed Sync:</span>
+            <span className="flex items-center gap-1 text-cyan-400 font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" style={{ animationDuration: '2.5s' }} />
+              100%
+            </span>
+          </div>
         </div>
       </div>
 
@@ -876,7 +996,7 @@ export default function DashboardPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="h-[270px]">
-                    {displayEmptyState("Start your first threat analysis", "Run a scan to generate timeline metrics.", "Deploy Scanner")}
+                    {displayEmptyState("Start your first threat analysis", "Run a scan to generate timeline metrics.", "Deploy Scanner", "timeline")}
                   </CardContent>
                 </Card>
               )}
@@ -948,7 +1068,7 @@ export default function DashboardPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="h-[270px]">
-                    {displayEmptyState("Analyze threat breakout", "Run a scan to generate severity distribution.", "Deploy Scanner")}
+                    {displayEmptyState("Analyze threat breakout", "Run a scan to generate severity distribution.", "Deploy Scanner", "severity")}
                   </CardContent>
                 </Card>
               )}
@@ -1183,7 +1303,7 @@ export default function DashboardPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="h-[240px]">
-                    {displayEmptyState("Compare engine statistics", "Run a scan to generate engine comparison indexes.", "Deploy Scanner")}
+                    {displayEmptyState("Compare engine statistics", "Run a scan to generate engine comparison indexes.", "Deploy Scanner", "engine")}
                   </CardContent>
                 </Card>
               )}

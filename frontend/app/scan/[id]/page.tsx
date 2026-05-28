@@ -18,6 +18,28 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'react-hot-toast';
 import DashboardLayout from '@/app/dashboard/layout';
 import { ScanResult } from '@/types/scan';
+import { motion, Variants } from 'framer-motion';
+
+// Performant requestAnimationFrame animated counter
+const AnimatedCounter = ({ value, duration = 800 }: { value: number; duration?: number }) => {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let startTimestamp: number | null = null;
+    const step = (timestamp: number) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      setCount(Math.floor(progress * value));
+      if (progress < 1) {
+        window.requestAnimationFrame(step);
+      }
+    };
+    window.requestAnimationFrame(step);
+  }, [value, duration]);
+
+  return <span>{count}</span>;
+};
+
 
 const getSeverityConfig = (tier: string = 'Low') => {
   switch (tier.toLowerCase()) {
@@ -77,6 +99,31 @@ interface PageProps {
 export default function DetailedReportPage({ params }: PageProps) {
   const { id } = use(params);
   const [isExporting, setIsExporting] = useState<'pdf' | 'json' | 'txt' | null>(null);
+  
+  const containerVariants: Variants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.08,
+        delayChildren: 0.1
+      }
+    }
+  };
+
+  const itemVariants: Variants = {
+    hidden: { opacity: 0, y: 15 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        type: 'spring',
+        stiffness: 100,
+        damping: 15
+      }
+    }
+  };
+
   const searchParams = useSearchParams();
   const isGuestQuery = searchParams.get('guest') === 'true';
   const { isGuest: isGuestStore } = useAuthStore();
@@ -303,10 +350,15 @@ export default function DetailedReportPage({ params }: PageProps) {
 
   return (
     <DashboardLayout>
-      <div className="container mx-auto px-4 py-8 max-w-5xl space-y-6 relative z-10">
+      <motion.div 
+        className="container mx-auto px-4 py-8 max-w-5xl space-y-6 relative z-10"
+        initial="hidden"
+        animate="visible"
+        variants={containerVariants}
+      >
         
         {/* Back Link & Title */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <motion.div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4" variants={itemVariants}>
           <div className="space-y-1">
             <Link 
               href={isGuestMode ? "/dashboard" : "/history"} 
@@ -372,10 +424,10 @@ export default function DetailedReportPage({ params }: PageProps) {
               TXT
             </Button>
           </div>
-        </div>
+        </motion.div>
 
         {/* 1. Threat Severity & Category Header */}
-        <div className={`p-5 rounded-lg border ${statusCfg.bannerBg} backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg`}>
+        <motion.div className={`p-5 rounded-lg border ${statusCfg.bannerBg} backdrop-blur-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg`} variants={itemVariants}>
           {/* Subtle background element */}
           <div className="absolute right-0 top-0 w-24 h-24 bg-white/[0.02] rounded-full -mr-8 -mt-8 pointer-events-none" />
           
@@ -411,10 +463,10 @@ export default function DetailedReportPage({ params }: PageProps) {
               ))}
             </div>
           )}
-        </div>
+        </motion.div>
 
         {/* 2. Scan Metadata Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-white/5 border border-white/10 rounded-lg text-xs sm:text-sm">
+        <motion.div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-white/5 border border-white/10 rounded-lg text-xs sm:text-sm" variants={itemVariants}>
           <div className="min-w-0">
             <span className="block text-muted-foreground text-xs uppercase tracking-wider mb-0.5">Scan ID</span>
             <span className="font-mono block truncate" title={scan.scan_id}>{scan.scan_id}</span>
@@ -431,11 +483,11 @@ export default function DetailedReportPage({ params }: PageProps) {
             <span className="block text-muted-foreground text-xs uppercase tracking-wider mb-0.5">Scan Time</span>
             <span className="block truncate">{new Date(scan.timestamp).toLocaleString()}</span>
           </div>
-        </div>
+        </motion.div>
 
         {/* Threat Intelligence Alert Panels (Phase 9) */}
         {(scan.technical_details.is_whitelisted || scan.technical_details.is_blacklisted || scan.technical_details.brand_spoof_detected) && (
-          <div className="grid grid-cols-1 gap-4 animate-in fade-in duration-300">
+          <motion.div className="grid grid-cols-1 gap-4" variants={itemVariants}>
             {scan.technical_details.is_whitelisted && (
               <div className="flex items-start gap-3 p-4 rounded-lg border border-green-500/30 bg-green-500/10 text-green-300">
                 <CheckCircle2 className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
@@ -478,12 +530,11 @@ export default function DetailedReportPage({ params }: PageProps) {
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
         )}
 
         {/* Subject URL Widget */}
-        <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
-
+        <motion.div className="border border-white/10 bg-black/40 backdrop-blur-xl rounded-xl" variants={itemVariants}>
           <CardHeader className="py-4">
             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Audit Subject URL
@@ -494,14 +545,14 @@ export default function DetailedReportPage({ params }: PageProps) {
               {scan.scanned_url}
             </p>
           </CardContent>
-        </Card>
+        </motion.div>
 
         {/* 3. Render Custom Comparison View or Standard View */}
         {scan.scan_type === 'comparison' ? (
-          <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="space-y-6">
             {/* Why This Matters Educational Insight Block */}
             {scan.technical_details?.educational_insight && (
-              <div className="p-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
+              <motion.div className="p-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(16,185,129,0.05)]" variants={itemVariants}>
                 <div className="p-3 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mt-1 flex-shrink-0">
                   <Brain className="w-6 h-6 animate-pulse" />
                 </div>
@@ -525,13 +576,13 @@ export default function DetailedReportPage({ params }: PageProps) {
                     {scan.technical_details.educational_insight}
                   </p>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {/* Side-by-Side scoreboard card headers */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <motion.div className="grid grid-cols-1 md:grid-cols-2 gap-6" variants={itemVariants}>
               {/* Heuristics Card */}
-              <Card className="border-white/10 bg-black/40 backdrop-blur-xl relative overflow-hidden">
+              <div className="border border-white/10 bg-black/40 backdrop-blur-xl rounded-xl relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-[2px] bg-cyan-500" />
                 <CardHeader className="py-4">
                   <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
@@ -540,7 +591,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                 </CardHeader>
                 <CardContent className="pb-5 pt-0 text-center space-y-2">
                   <div className="text-5xl font-extrabold tracking-tight">
-                    {scan.technical_details.rule_based_result?.score}
+                    <AnimatedCounter value={scan.technical_details.rule_based_result?.score || 0} />
                     <span className="text-xl text-muted-foreground font-normal">/100</span>
                   </div>
                   <span className={`px-2.5 py-0.5 inline-flex rounded-full text-[10px] font-bold border ${getStatusBadge(scan.technical_details.rule_based_result?.status || 'SAFE')}`}>
@@ -548,10 +599,10 @@ export default function DetailedReportPage({ params }: PageProps) {
                   </span>
                   <p className="text-[10px] text-muted-foreground font-mono">Deterministic pattern matching</p>
                 </CardContent>
-              </Card>
+              </div>
 
               {/* ML Card */}
-              <Card className="border-white/10 bg-black/40 backdrop-blur-xl relative overflow-hidden">
+              <div className="border border-white/10 bg-black/40 backdrop-blur-xl rounded-xl relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-[2px] bg-emerald-500" />
                 <CardHeader className="py-4">
                   <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
@@ -560,7 +611,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                 </CardHeader>
                 <CardContent className="pb-5 pt-0 text-center space-y-2">
                   <div className="text-5xl font-extrabold tracking-tight">
-                    {scan.technical_details.ml_result?.score}
+                    <AnimatedCounter value={scan.technical_details.ml_result?.score || 0} />
                     <span className="text-xl text-muted-foreground font-normal">/100</span>
                   </div>
                   <div className="space-x-2">
@@ -575,15 +626,15 @@ export default function DetailedReportPage({ params }: PageProps) {
                   </div>
                   <p className="text-[10px] text-muted-foreground font-mono">Statistical random forest model</p>
                 </CardContent>
-              </Card>
-            </div>
+              </div>
+            </motion.div>
 
             {/* Unified risk correlation explanation */}
-            <div className="p-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
+            <motion.div className="p-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(16,185,129,0.05)]" variants={itemVariants}>
               <div className="p-3 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mt-1 flex-shrink-0">
                 <Info className="w-6 h-6 animate-pulse" />
               </div>
-              <div className="space-y-1 flex-1 min-w-0">
+              <div className="space-y-1.5 flex-1 min-w-0">
                 <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-widest font-mono">
                   Unified Risk Correlation & Consensus Assessment
                 </h4>
@@ -601,11 +652,11 @@ export default function DetailedReportPage({ params }: PageProps) {
                   <span>Unified Risk Status: {scan.status}</span>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
             {/* Scan Journey Timeline */}
             {scan.technical_details?.scan_journey && (
-              <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
+              <motion.div className="border border-white/10 bg-black/40 backdrop-blur-xl rounded-xl" variants={itemVariants}>
                 <CardHeader className="py-4 border-b border-white/5">
                   <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <Activity className="w-3.5 h-3.5 text-cyan-400" />
@@ -613,7 +664,13 @@ export default function DetailedReportPage({ params }: PageProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6 pb-6">
-                  <div className="relative border-l border-white/10 pl-6 ml-3 space-y-6">
+                  <div className="relative pl-6 ml-3 space-y-6">
+                    <motion.div 
+                      className="absolute left-0 top-2 bottom-2 w-px bg-white/10 origin-top"
+                      initial={{ scaleY: 0 }}
+                      animate={{ scaleY: 1 }}
+                      transition={{ duration: 0.8, ease: "easeInOut" }}
+                    />
                     {scan.technical_details.scan_journey.map((step: any, idx: number) => {
                       let icon = <Info className="w-4 h-4 text-cyan-400" />;
                       let colorClass = "text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
@@ -635,9 +692,14 @@ export default function DetailedReportPage({ params }: PageProps) {
                       return (
                         <div key={idx} className="relative group transition-all duration-300">
                           {/* Timeline Node Icon */}
-                          <div className={`absolute -left-[35px] top-0.5 rounded-full p-1 border flex items-center justify-center ${colorClass}`}>
+                          <motion.div 
+                            className={`absolute -left-[35px] top-0.5 rounded-full p-1 border flex items-center justify-center ${colorClass}`}
+                            initial={{ scale: 0, rotate: -30 }}
+                            animate={{ scale: 1, rotate: 0 }}
+                            transition={{ type: 'spring', delay: idx * 0.05 + 0.2, stiffness: 200 }}
+                          >
                             {icon}
-                          </div>
+                          </motion.div>
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <h4 className="text-sm font-bold text-foreground/90 font-mono">
@@ -661,7 +723,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                     })}
                   </div>
                 </CardContent>
-              </Card>
+              </motion.div>
             )}
 
             {/* Cross-engine threat indicator checklist */}
@@ -916,7 +978,7 @@ export default function DetailedReportPage({ params }: PageProps) {
               
               {/* Why This Matters Educational Insight Block */}
               {scan.technical_details?.educational_insight && (
-                <div className="p-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(16,185,129,0.05)] animate-in fade-in duration-300">
+                <motion.div className="p-5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 backdrop-blur-sm space-y-3 flex items-start gap-4 shadow-[0_0_20px_rgba(16,185,129,0.05)]" variants={itemVariants}>
                   <div className="p-3 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mt-1 flex-shrink-0">
                     <Brain className="w-6 h-6 animate-pulse" />
                   </div>
@@ -940,12 +1002,12 @@ export default function DetailedReportPage({ params }: PageProps) {
                       {scan.technical_details.educational_insight}
                     </p>
                   </div>
-                </div>
+                </motion.div>
               )}
 
               {/* Scan Journey Timeline */}
               {scan.technical_details?.scan_journey && (
-                <Card className="border-white/10 bg-black/40 backdrop-blur-xl animate-in fade-in duration-300">
+                <motion.div className="border border-white/10 bg-black/40 backdrop-blur-xl rounded-xl" variants={itemVariants}>
                   <CardHeader className="py-4 border-b border-white/5">
                     <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <Activity className="w-3.5 h-3.5 text-blue-400" />
@@ -953,7 +1015,13 @@ export default function DetailedReportPage({ params }: PageProps) {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-6 pb-6">
-                    <div className="relative border-l border-white/10 pl-6 ml-3 space-y-6">
+                    <div className="relative pl-6 ml-3 space-y-6">
+                      <motion.div 
+                        className="absolute left-0 top-2 bottom-2 w-px bg-white/10 origin-top"
+                        initial={{ scaleY: 0 }}
+                        animate={{ scaleY: 1 }}
+                        transition={{ duration: 0.8, ease: "easeInOut" }}
+                      />
                       {scan.technical_details.scan_journey.map((step: any, idx: number) => {
                         let icon = <Info className="w-4 h-4 text-cyan-400" />;
                         let colorClass = "text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
@@ -975,9 +1043,14 @@ export default function DetailedReportPage({ params }: PageProps) {
                         return (
                           <div key={idx} className="relative group transition-all duration-300">
                             {/* Timeline Node Icon */}
-                            <div className={`absolute -left-[35px] top-0.5 rounded-full p-1 border flex items-center justify-center ${colorClass}`}>
+                            <motion.div 
+                              className={`absolute -left-[35px] top-0.5 rounded-full p-1 border flex items-center justify-center ${colorClass}`}
+                              initial={{ scale: 0, rotate: -30 }}
+                              animate={{ scale: 1, rotate: 0 }}
+                              transition={{ type: 'spring', delay: idx * 0.05 + 0.2, stiffness: 200 }}
+                            >
                               {icon}
-                            </div>
+                            </motion.div>
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
                                 <h4 className="text-sm font-bold text-foreground/90 font-mono">
@@ -1001,7 +1074,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                       })}
                     </div>
                   </CardContent>
-                </Card>
+                </motion.div>
               )}
               
               {/* Findings Panel */}
@@ -1125,11 +1198,11 @@ export default function DetailedReportPage({ params }: PageProps) {
 
               
               {/* Score Summary Panel */}
-              <Card className={`border-white/10 bg-black/40 backdrop-blur-xl transition-all duration-500 ${
+              <motion.div className={`border border-white/10 bg-black/40 backdrop-blur-xl transition-all duration-500 rounded-xl ${
                 scan.status.toUpperCase() === 'SAFE' ? 'shadow-[0_0_25px_rgba(16,185,129,0.06)]' :
                 scan.status.toUpperCase() === 'SUSPICIOUS' ? 'shadow-[0_0_25px_rgba(245,158,11,0.08)]' :
                 'shadow-[0_0_25px_rgba(239,68,68,0.12)]'
-              }`}>
+              }`} variants={itemVariants}>
                 <CardHeader className="py-4">
                   <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Threat score
@@ -1138,7 +1211,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                 <CardContent className="pb-5 pt-0 text-center">
                   <div className="mb-4">
                     <div className="text-5xl font-extrabold tracking-tight">
-                      {scan.score}
+                      <AnimatedCounter value={scan.score || 0} />
                       <span className="text-xl text-muted-foreground font-normal">/100</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1.5 uppercase font-semibold tracking-wider">
@@ -1171,7 +1244,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                     <span>100 (DANGEROUS)</span>
                   </div>
                 </CardContent>
-              </Card>
+              </motion.div>
 
               {/* Technical Details Panel */}
               <Card className="border-white/10 bg-black/40 backdrop-blur-xl">
@@ -1286,7 +1359,7 @@ export default function DetailedReportPage({ params }: PageProps) {
             </div>
           </div>
         )}
-      </div>
+      </motion.div>
     </DashboardLayout>
   );
 }

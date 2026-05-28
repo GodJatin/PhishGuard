@@ -11,6 +11,7 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/auth-store';
 import Logo from '@/components/shared/logo';
+import ThreatIntelligenceRadar from '@/components/shared/radar';
 
 export default function Home() {
   const router = useRouter();
@@ -74,7 +75,7 @@ export default function Home() {
       <div className="absolute top-[20%] right-[10%] w-[450px] h-[450px] bg-cyan-500/5 rounded-full blur-[120px] pointer-events-none animate-pulse" style={{ animationDuration: '12s' }} />
 
       {/* Global Navbar Header */}
-      <header className="sticky top-0 w-full z-50 border-b border-white/[0.05] bg-[#070709]/75 backdrop-blur-md">
+      <header className="sticky top-0 w-full z-50 border-b border-white/[0.05] bg-[#070709]/75 backdrop-blur-md pt-[env(safe-area-inset-top)]">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/">
             <Logo size="md" />
@@ -97,7 +98,31 @@ export default function Home() {
       </header>
 
       {/* Main Page Content */}
-      <main className="flex-1 flex flex-col items-center">
+      <main className="flex-1 flex flex-col items-center w-full">
+        {/* TELEMETRY TICKER */}
+        <div className="w-full bg-[#111215]/40 border-b border-white/5 py-2 overflow-hidden flex items-center">
+          <div className="flex whitespace-nowrap gap-16 font-mono text-[9px] text-emerald-400/70 tracking-widest uppercase animate-marquee">
+            <span>⚡ SYSTEM CORE: ACTIVE</span>
+            <span>•</span>
+            <span>📡 THREAT DATA FEEDS SYNCHRONIZED</span>
+            <span>•</span>
+            <span>🤖 PRETRAINED RANDOM FOREST MODEL ONLINE</span>
+            <span>•</span>
+            <span>⚖️ CONSENSUS MODULE STATUS: NOMINAL</span>
+            <span>•</span>
+            <span>🛡️ REPUTATION IP BLACKLIST ACTIVE (300+ FEEDS)</span>
+            <span>•</span>
+            <span>⚡ SYSTEM CORE: ACTIVE</span>
+            <span>•</span>
+            <span>📡 THREAT DATA FEEDS SYNCHRONIZED</span>
+            <span>•</span>
+            <span>🤖 PRETRAINED RANDOM FOREST MODEL ONLINE</span>
+            <span>•</span>
+            <span>⚖️ CONSENSUS MODULE STATUS: NOMINAL</span>
+            <span>•</span>
+            <span>🛡️ REPUTATION IP BLACKLIST ACTIVE (300+ FEEDS)</span>
+          </div>
+        </div>
         
         {/* HERO SECTION */}
         <section className="container mx-auto px-4 pt-20 pb-16 max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
@@ -178,84 +203,16 @@ export default function Home() {
             </motion.div>
           </motion.div>
 
-          {/* TELEMETRY SIMULATOR CARD */}
+          {/* RADAR CENTERPIECE */}
           <motion.div 
             className="lg:col-span-5 w-full relative"
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.7, ease: 'easeOut' }}
           >
             {/* Ambient card glow */}
             <div className="absolute inset-0 bg-emerald-500/5 rounded-2xl blur-3xl pointer-events-none" />
-            
-            <div className="border border-white/[0.08] bg-[#111215]/90 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-xl">
-              <div className="flex items-center justify-between px-4 py-3 bg-[#0d0d0f] border-b border-white/[0.05] text-xs font-mono text-neutral-400">
-                <span className="flex items-center gap-2">
-                  <Terminal className="w-3.5 h-3.5 text-emerald-500" />
-                  threat_aggregator_scan.log
-                </span>
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              </div>
-              <div className="p-5 space-y-4 font-mono text-xs text-left min-h-[260px] flex flex-col justify-between">
-                
-                <AnimatePresence mode="wait">
-                  <motion.div 
-                    key={activeScanItem}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.3 }}
-                    className="space-y-3"
-                  >
-                    <div>
-                      <p className="text-neutral-500">$ phishguard scan --url "{simulatedScans[activeScanItem].url}"</p>
-                      <p className="text-emerald-400 mt-1">⚡ Analyzing layers [1 - 7]...</p>
-                    </div>
-
-                    <div className="space-y-1 pl-3 border-l-2 border-emerald-500/30">
-                      <p className="text-neutral-400">Whitelist: <span className="text-neutral-500">CHECKED</span></p>
-                      {simulatedScans[activeScanItem].score > 0 ? (
-                        <>
-                          <p className="text-neutral-400">Blacklist: <span className="text-crimson text-[#ef4444] font-bold">ALERT HIT</span></p>
-                          <p className="text-neutral-400">Brand Spoof: <span className="text-amber font-bold text-amber-500">levenshtein: {simulatedScans[activeScanItem].brand}</span></p>
-                          <p className="text-neutral-400">ML Classifier: <span className="text-[#ef4444] font-bold">{simulatedScans[activeScanItem].score}% probability</span></p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-neutral-400">Blacklist: <span className="text-emerald-400 font-bold">CLEAN</span></p>
-                          <p className="text-neutral-400">Brand Spoof: <span className="text-emerald-400 font-bold">CLEAN</span></p>
-                          <p className="text-neutral-400">ML Classifier: <span className="text-emerald-400 font-bold">0.02% safe</span></p>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="pt-2 border-t border-white/[0.05]">
-                      <div className={`flex justify-between items-center p-2.5 rounded-lg border ${
-                        simulatedScans[activeScanItem].status === 'DANGEROUS' ? 'bg-red-500/5 border-red-500/20 text-[#ef4444]' :
-                        simulatedScans[activeScanItem].status === 'SUSPICIOUS' ? 'bg-amber-500/5 border-amber-500/20 text-amber-500' :
-                        'bg-emerald-500/5 border-emerald-500/20 text-emerald-400'
-                      }`}>
-                        <div>
-                          <p className="font-bold uppercase text-[10px] tracking-wider">
-                            {simulatedScans[activeScanItem].status} - {simulatedScans[activeScanItem].category}
-                          </p>
-                          <p className="text-[9px] text-neutral-400 mt-0.5">Consensus alignment completed.</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-lg font-bold">{simulatedScans[activeScanItem].score}/100</p>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                </AnimatePresence>
-
-                {/* dynamic telemetry summary footer inside card */}
-                <div className="flex items-center gap-2 p-2 bg-white/5 rounded border border-white/10 text-neutral-400">
-                  <Brain className="w-4 h-4 text-cyan-400 flex-shrink-0 animate-pulse" />
-                  <span className="text-[10px] uppercase tracking-wider">Consensus Engine Core Online</span>
-                </div>
-              </div>
-            </div>
+            <ThreatIntelligenceRadar />
           </motion.div>
 
         </section>
@@ -470,7 +427,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-white/[0.05] py-8 bg-[#0a0b0d]">
+      <footer className="border-t border-white/[0.05] pt-8 pb-[calc(2rem+env(safe-area-inset-bottom))] bg-[#0a0b0d]">
         <div className="container mx-auto px-4 max-w-5xl flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-mono text-neutral-500">
           <p>© 2026 PhishGuard. Professional Threat Intelligence Console.</p>
           <div className="flex items-center gap-6">
