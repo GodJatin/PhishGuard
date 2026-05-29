@@ -43,7 +43,7 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
       <motion.div
         initial={{ opacity: 1 }}
         exit={{ opacity: 0, transition: { duration: 0.4, ease: 'easeOut' } }}
-        className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#070709] text-white"
+        className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#070709] text-white overflow-hidden"
       >
         {/* Mesh grid background */}
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#111215_1px,transparent_1px),linear-gradient(to_bottom,#111215_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none opacity-40" />
@@ -51,27 +51,26 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
         {/* Center glowing element */}
         <div className="absolute w-[350px] h-[350px] bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
 
-        <div className="z-10 absolute inset-0 w-full h-full flex flex-col items-center justify-center">
+        <div className="z-10 flex flex-col items-center justify-center w-full h-full px-4 text-center relative">
           
           {/* Video Animation */}
           <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
+            initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.6, type: 'spring' }}
-            className="w-full h-full flex justify-center items-center"
+            transition={{ duration: 0.5, type: 'spring' }}
+            className="absolute inset-0 w-full h-full flex justify-center items-center pointer-events-none"
           >
             <video 
                src="/splash_screen.mp4" 
                autoPlay 
                muted 
                playsInline 
-               className="w-full h-full object-contain mix-blend-screen"
+               className="w-full h-full max-w-5xl object-contain sm:object-contain object-center scale-110 sm:scale-100"
             />
           </motion.div>
-        </div>
 
-        {/* Stepper Status Content */}
-        <div className="absolute bottom-12 left-0 right-0 z-20 flex flex-col items-center justify-center font-mono space-y-6">
+          {/* Stepper Status Content */}
+          <div className="absolute bottom-16 left-0 w-full h-16 flex flex-col items-center justify-center font-mono">
             <AnimatePresence mode="wait">
               {step === 0 && (
                 <motion.div
@@ -125,11 +124,12 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
                 </motion.div>
               )}
             </AnimatePresence>
+          </div>
 
           {/* Micro Progress Bar */}
-          <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden border border-white/5">
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-36 h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
             <motion.div 
-              className="h-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]"
+              className="h-full bg-emerald-500"
               initial={{ width: '0%' }}
               animate={{ 
                 width: step === 0 ? '30%' : step === 1 ? '70%' : '100%' 
