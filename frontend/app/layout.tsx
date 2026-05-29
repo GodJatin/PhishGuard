@@ -4,6 +4,7 @@ import './globals.css';
 import Providers from './providers';
 import { Toaster } from 'react-hot-toast';
 import GlobalOfflineBanner from '@/components/ui/offline-banner';
+import AnimatedTitle from '@/components/shared/animated-title';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -16,6 +17,9 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'PhishGuard',
   },
+  icons: {
+    icon: '/favicon.png',
+  },
 };
 
 export default function RootLayout({
@@ -27,6 +31,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={`${inter.className} min-h-screen bg-background text-foreground`}>
         <Providers>
+          <AnimatedTitle />
           <GlobalOfflineBanner />
           {children}
           <Toaster position="top-right" toastOptions={{ duration: 4000 }} />

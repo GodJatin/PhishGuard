@@ -37,7 +37,7 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
         sessionStorage.setItem('phishguard_session_splashed', 'true');
       }
       if (onComplete) onComplete();
-    }, 2600);
+    }, 4500);
 
     return () => {
       clearTimeout(timer1);
@@ -63,13 +63,20 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
 
         <div className="z-10 flex flex-col items-center max-w-sm w-full px-6 text-center space-y-6">
           
-          {/* Logo Animation */}
+          {/* Video Animation */}
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.5, type: 'spring' }}
+            className="w-full flex justify-center items-center overflow-hidden"
           >
-            <Logo size="lg" iconOnly />
+            <video 
+               src="/splash_screen.mp4" 
+               autoPlay 
+               muted 
+               playsInline 
+               className="w-full max-w-[320px] sm:max-w-[400px] h-auto object-contain rounded-2xl shadow-2xl shadow-emerald-500/20"
+            />
           </motion.div>
 
           {/* Stepper Status Content */}
