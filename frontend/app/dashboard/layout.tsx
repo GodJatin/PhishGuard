@@ -9,7 +9,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import Logo from '@/components/shared/logo';
-import SplashScreen from '@/components/shared/loaders/splash-screen';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -77,7 +76,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   if (isLoading) {
-    return <SplashScreen />;
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-[#070709]">
+        <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+      </div>
+    );
   }
 
   const navItems = isGuest

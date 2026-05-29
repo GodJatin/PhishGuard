@@ -14,15 +14,8 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
-    // Check if splash screen has run in this session
-    if (typeof window !== 'undefined') {
-      const hasSplashed = sessionStorage.getItem('phishguard_session_splashed');
-      if (hasSplashed) {
-        setIsVisible(false);
-        if (onComplete) onComplete();
-        return;
-      }
-    }
+    // Remove sessionStorage check so it plays on every refresh
+
 
     // Sequence timer:
     // Step 0: Logo Pulse (0ms to 900ms)
@@ -33,9 +26,6 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
     const timer2 = setTimeout(() => setStep(2), 1800);
     const timer3 = setTimeout(() => {
       setIsVisible(false);
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('phishguard_session_splashed', 'true');
-      }
       if (onComplete) onComplete();
     }, 4500);
 
@@ -61,26 +51,27 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
         {/* Center glowing element */}
         <div className="absolute w-[350px] h-[350px] bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
 
-        <div className="z-10 flex flex-col items-center max-w-sm w-full px-6 text-center space-y-6">
+        <div className="z-10 absolute inset-0 w-full h-full flex flex-col items-center justify-center">
           
           {/* Video Animation */}
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
+            initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.5, type: 'spring' }}
-            className="w-full flex justify-center items-center overflow-hidden"
+            transition={{ duration: 0.6, type: 'spring' }}
+            className="w-full h-full flex justify-center items-center"
           >
             <video 
                src="/splash_screen.mp4" 
                autoPlay 
                muted 
                playsInline 
-               className="w-full max-w-[320px] sm:max-w-[400px] h-auto object-contain rounded-2xl shadow-2xl shadow-emerald-500/20"
+               className="w-full h-full object-contain mix-blend-screen"
             />
           </motion.div>
+        </div>
 
-          {/* Stepper Status Content */}
-          <div className="h-16 flex flex-col items-center justify-center font-mono">
+        {/* Stepper Status Content */}
+        <div className="absolute bottom-12 left-0 right-0 z-20 flex flex-col items-center justify-center font-mono space-y-6">
             <AnimatePresence mode="wait">
               {step === 0 && (
                 <motion.div
@@ -134,12 +125,11 @@ export default function SplashScreen({ onComplete }: SplashScreenProps) {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
 
           {/* Micro Progress Bar */}
-          <div className="w-36 h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
+          <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden border border-white/5">
             <motion.div 
-              className="h-full bg-emerald-500"
+              className="h-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]"
               initial={{ width: '0%' }}
               animate={{ 
                 width: step === 0 ? '30%' : step === 1 ? '70%' : '100%' 

@@ -5,6 +5,7 @@ import Providers from './providers';
 import { Toaster } from 'react-hot-toast';
 import GlobalOfflineBanner from '@/components/ui/offline-banner';
 import AnimatedTitle from '@/components/shared/animated-title';
+import SplashScreen from '@/components/shared/loaders/splash-screen';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -32,6 +33,7 @@ export default function RootLayout({
       <body className={`${inter.className} min-h-screen bg-background text-foreground`}>
         <Providers>
           <AnimatedTitle />
+          <SplashScreen />
           <GlobalOfflineBanner />
           {children}
           <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
