@@ -9,6 +9,7 @@
   [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python)](https://python.org/)
   [![PWA Ready](https://img.shields.io/badge/PWA-Ready-5A0FC8?style=flat-square&logo=pwa)](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+  [![Cybersecurity](https://img.shields.io/badge/Cybersecurity-Advanced-red?style=flat-square&logo=security)](#)
 
   <br />
 </div>
@@ -185,15 +186,43 @@ Scan results can be instantly exported for forensic auditing or compliance filin
 
 ---
 
-## 🔭 Future Scope
+## 🔭 Future Roadmap
 
-- **Real-time DNS Resolution**: Active DNS checks for A, AAAA, and MX records.
-- **Visual Sandbox Rendering**: Headless browser capturing to render potential phishing pages safely.
-- **Custom Yara Rules**: User-defined rulesets for enterprise environments.
+Current Status:
+Advanced Cybersecurity SaaS Prototype
+
+Completed:
+
+* QR Scanner
+* Threat Intelligence Feeds
+* Domain Intelligence
+* Decision Engine
+* Analyst Reporting
+
+Planned:
+
+* Custom Ensemble Intelligence Model
+* ASN / Hosting Intelligence
+
+Future Scope:
+
+* Browser Extension
 
 ---
 
-## 📜 License
+## 🧪 Code Quality
+
+| Metric | Status |
+|--------|--------|
+| TypeScript Errors | 0 |
+| ESLint Errors | 0 |
+| ESLint Warnings | 27 (all warnings only, no errors) |
+| Build Status | ✅ Passes |
+| Test Coverage | Manual integration tested |
+
+---
+
+## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
 

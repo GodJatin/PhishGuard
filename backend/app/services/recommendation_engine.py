@@ -1,76 +1,59 @@
 from typing import List, Dict, Any
 
 def generate_recommendation(
-    status: str,
+    final_verdict: str,
     score: int,
     reasons: List[str],
     technical_details: Dict[str, Any]
 ) -> str:
     """
     Generates a dynamic, contextual, and highly actionable security recommendation
-    based on the specific indicators flagged during analysis.
-    
-    If multiple indicators are present, the highest-risk threats are prioritized
-    to avoid overwhelming the user with excessive text.
+    based directly on the Final Verdict and intelligence signals.
     """
-    status_upper = status.upper()
-    
-    # 1. Handle SAFE status
-    if status_upper == "SAFE":
+    verdict = final_verdict.upper() if final_verdict else "SUSPICIOUS"
+
+    # Base string from Final Verdict
+    if verdict == "SAFE":
+        base_rec = "Safe to visit."
         https = technical_details.get("https", True)
         if not https:
-            return "Missing HTTPS encryption. Avoid transmitting sensitive credentials or personal data over this connection."
-        return "No immediate threats or spoofing signatures detected. Make sure the domain name matches the expected brand before entering any credentials."
+            base_rec += " However, missing HTTPS encryption means you should avoid transmitting sensitive credentials."
+    elif verdict == "SUSPICIOUS":
+        base_rec = "Exercise caution."
+    elif verdict == "HIGH RISK":
+        base_rec = "Do not enter credentials. Verify legitimacy independently."
+    elif verdict == "CRITICAL":
+        base_rec = "Avoid interaction. Potential phishing activity detected."
+    elif verdict == "MALICIOUS":
+        base_rec = "Do not visit. Known malicious infrastructure identified."
+    else:
+        base_rec = "Exercise caution."
 
-    # 2. Extract technical indicators
-    has_ip = technical_details.get("contains_ip", False)
-    has_no_https = not technical_details.get("https", True)
-    keywords_found = technical_details.get("suspicious_keywords_found", [])
-    subdomain_count = technical_details.get("subdomain_count", 0)
-    suspicious_tld = technical_details.get("suspicious_tld", False)
-    redirect_pattern = technical_details.get("redirect_pattern_detected", False) or technical_details.get("redirect_pattern", False)
-    at_symbol = technical_details.get("at_symbol", False)
-    encoded_chars = technical_details.get("encoded_char_presence", False)
-    url_length = technical_details.get("url_length", 0)
-
-    # 3. Collect active vulnerability details
-    bullet_points = []
+    # Contextual Brand Additions
+    brand_spoof_detected = technical_details.get("brand_spoof_detected", False)
+    suspected_brand = technical_details.get("suspected_brand", "")
     
-    if has_ip:
-        bullet_points.append("uses a raw IP address instead of a trusted domain")
-    if has_no_https:
-        bullet_points.append("lacks HTTPS encryption")
-    if keywords_found:
-        kws = ", ".join(f"'{k}'" for k in keywords_found[:2])
-        bullet_points.append(f"contains deceptive keywords ({kws})")
-    if subdomain_count >= 3:
-        bullet_points.append("exhibits excessive subdomain nesting")
-    if suspicious_tld:
-        bullet_points.append("is hosted on a top-level domain frequently used for attacks")
-    if redirect_pattern:
-        bullet_points.append("contains suspicious redirection characters")
-    if at_symbol:
-        bullet_points.append("uses character masking (@ symbol)")
-    if encoded_chars:
-        bullet_points.append("features obfuscated encoding patterns")
-
-    # 4. Fallback if no specific indicator was mapped
-    if not bullet_points:
-        if status_upper == "SUSPICIOUS":
-            return "Proceed with caution. The URL exhibits minor structural anomalies. Verify the sender's source before submitting information."
+    if brand_spoof_detected and suspected_brand:
+        b_lower = suspected_brand.lower()
+        if b_lower == "paypal":
+            return "Do not enter credentials or payment information. Verify legitimacy through the official PayPal website. Avoid links received through emails, SMS messages, or social platforms."
+        elif b_lower == "microsoft":
+            return f"{base_rec} Use the official Microsoft portal for account verification."
+        elif b_lower == "google":
+            return f"{base_rec} Use the official Google account recovery page."
+        elif b_lower in ("chase", "bank of america", "wells fargo", "citibank", "stripe", "coinbase", "binance", "metamask", "americanexpress", "discover"):
+            return f"{base_rec} Verify legitimacy through official vendor channels."
         else:
-            return "Do not visit this URL. The link exhibits high-risk patterns consistent with active phishing campaigns."
+            return f"{base_rec} Verify legitimacy of this {suspected_brand} link through official channels."
 
-    # 5. Format recommendation by prioritizing high-risk indicators
-    # We choose the top 2 indicators to remain concise
-    active_indicators = bullet_points[:2]
-    if len(active_indicators) == 1:
-        indicator_clause = f"it {active_indicators[0]}"
-    else:
-        indicator_clause = f"it {active_indicators[0]} and {active_indicators[1]}"
+    # Extract technical indicators for structural context (if no brand spoof)
+    has_ip = technical_details.get("contains_ip", False)
+    redirect_pattern = technical_details.get("redirect_pattern_detected", False) or technical_details.get("redirect_pattern", False)
+    
+    if verdict in ("SUSPICIOUS", "HIGH RISK", "CRITICAL", "MALICIOUS"):
+        if has_ip:
+            return f"{base_rec} The URL uses a raw IP address instead of a trusted domain."
+        if redirect_pattern:
+            return f"{base_rec} The URL contains suspicious redirection patterns."
 
-    if status_upper == "SUSPICIOUS":
-        return f"Proceed with caution. Because {indicator_clause}, it is highly recommended to verify the identity of the sender independently before entering credentials."
-    else:
-        # DANGEROUS status
-        return f"Do not visit this URL. Because {indicator_clause}, entering passwords or credit card details here puts your security at high risk of credential theft."
+    return base_rec

@@ -24,7 +24,7 @@ def get_overview(user_id: str = Depends(get_current_user_id)):
     try:
         logger.info("Fetching scan overview for user_id: %s", user_id)
         result = supabase.table("scans").select(
-            "status, scan_type, score, created_at, reasons, technical_details"
+            "status, scan_type, score, created_at, reasons, technical_details, scan_source"
         ).eq("user_id", user_id).execute()
         
         scans = result.data or []

@@ -74,25 +74,28 @@ def check_brand_spoof(domain: str) -> dict:
         spoof_type (str) - "homoglyph" | "typosquat" | "keyword_imitation" | ""
         explanation (str)
     """
-    # Normalize domain name
-    domain = domain.lower().strip()
-    if domain.startswith("www."):
-        domain = domain[4:]
+    # Normalize domain name, preserving case for homoglyph mapping
+    domain_orig = domain.strip()
+    if domain_orig.lower().startswith("www."):
+        domain_orig = domain_orig[4:]
+        
+    domain_lower = domain_orig.lower()
         
     for brand in PROTECTED_BRANDS:
         # 1. Check if the domain is a legitimate official domain for the brand
         # e.g., secure.paypal.com or paypal.com
         is_legitimate = False
         for official_dom in brand["domains"]:
-            if domain == official_dom or domain.endswith("." + official_dom):
+            if domain_lower == official_dom or domain_lower.endswith("." + official_dom):
                 is_legitimate = True
                 break
         if is_legitimate:
             continue
             
         # 2. Extract bare domain name (e.g., paypal-verify -> paypal-verify, paypa1.com -> paypa1)
-        bare_candidate = extract_bare_domain(domain)
-        normalized_bare_candidate = normalize_homoglyphs(bare_candidate)
+        bare_candidate_orig = extract_bare_domain(domain_orig)
+        bare_candidate_lower = bare_candidate_orig.lower()
+        normalized_bare_candidate = normalize_homoglyphs(bare_candidate_orig)
         
         # Check official bare domains
         for official_dom in brand["domains"]:
@@ -100,24 +103,24 @@ def check_brand_spoof(domain: str) -> dict:
             normalized_bare_official = normalize_homoglyphs(bare_official)
             
             # A. Homoglyph check: if normalized bare domains match exactly but original didn't
-            if normalized_bare_candidate == normalized_bare_official and bare_candidate != bare_official:
+            if normalized_bare_candidate == normalized_bare_official and bare_candidate_lower != bare_official:
                 return {
                     "is_spoofed": True,
                     "suspected_brand": brand["name"],
                     "similarity_score": 100.0,
                     "spoof_type": "homoglyph",
-                    "explanation": f"Suspected homoglyph attack impersonating {brand['name']}. Visually similar characters detected (e.g., {bare_candidate} vs {bare_official})."
+                    "explanation": f"Suspected homoglyph attack impersonating {brand['name']}. Visually similar characters detected (e.g., {bare_candidate_orig} vs {bare_official})."
                 }
                 
             # B. Typosquatting check via Levenshtein distance
             # E.g., paypa1 vs paypal (dist 1), paypaal vs paypal (dist 1)
-            dist = levenshtein_distance(bare_candidate, bare_official)
-            max_len = max(len(bare_candidate), len(bare_official))
+            dist = levenshtein_distance(bare_candidate_lower, bare_official)
+            max_len = max(len(bare_candidate_lower), len(bare_official))
             similarity = (1.0 - (dist / max_len)) * 100 if max_len > 0 else 0
             
             # We tune threshold: edit distance of 1 or 2, and similarity >= 75%
             # Also ensure candidate is not too short to avoid accidental matches
-            if 0 < dist <= 2 and similarity >= 75.0 and len(bare_candidate) >= 4:
+            if 0 < dist <= 2 and similarity >= 75.0 and len(bare_candidate_lower) >= 4:
                 return {
                     "is_spoofed": True,
                     "suspected_brand": brand["name"],

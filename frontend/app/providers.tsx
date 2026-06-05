@@ -48,7 +48,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     // Intercept install prompt for custom PWA install button
     const handleInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e);
+      setDeferredPrompt(e as any);
     };
 
     window.addEventListener('beforeinstallprompt', handleInstallPrompt);

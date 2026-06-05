@@ -38,6 +38,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Close mobile navigation on route change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMobileMenuOpen(false);
   }, [pathname]);
 

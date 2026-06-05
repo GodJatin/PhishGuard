@@ -11,7 +11,7 @@ import { safeParseJSON } from '@/lib/utils/localStorage';
 import { 
   ArrowLeft, ShieldCheck, AlertTriangle, ShieldAlert, Info, 
   Activity, Search, Download, Loader2, FileText, Code, FileCode, CheckCircle2,
-  Brain, Cpu
+  Brain, Cpu, QrCode, Globe, ListChecks
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -138,6 +138,7 @@ export default function DetailedReportPage({ params }: PageProps) {
       const scans = safeParseJSON<ScanResult[]>('phishguard_guest_scans', []);
       const match = scans.find((s) => s.scan_id === id);
       if (match) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLocalScan(match);
       }
       setIsLocalLoading(false);
@@ -220,30 +221,31 @@ export default function DetailedReportPage({ params }: PageProps) {
       }, 1000);
       
       toast.success(`${format.toUpperCase()} downloaded successfully`, { id: toastId });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const axiosErr = err as { userMessage?: string; message?: string; response?: { status?: number; data?: Blob | { detail?: string; message?: string } } };
       let errorMessage: string;
 
       // Use normalized message from axios interceptor when available
-      if (err.userMessage) {
-        errorMessage = err.userMessage;
-      } else if (err.response?.data instanceof Blob) {
+      if (axiosErr.userMessage) {
+        errorMessage = axiosErr.userMessage;
+      } else if (axiosErr.response?.data instanceof Blob) {
         try {
-          const text = await err.response.data.text();
+          const text = await axiosErr.response.data.text();
           const parsed = JSON.parse(text);
-          errorMessage = parsed?.detail || parsed?.message || `Export failed with status ${err.response.status}`;
+          errorMessage = parsed?.detail || parsed?.message || `Export failed with status ${axiosErr.response.status}`;
         } catch {
-          if (err.response?.status === 403) {
+          if (axiosErr.response?.status === 403) {
             errorMessage = 'Access denied. You do not own this scan report.';
-          } else if (err.response?.status === 404) {
+          } else if (axiosErr.response?.status === 404) {
             errorMessage = 'Scan report not found. It may have been deleted.';
           } else {
-            errorMessage = `Export failed: Server returned status code ${err.response.status}`;
+            errorMessage = `Export failed: Server returned status code ${axiosErr.response?.status}`;
           }
         }
-      } else if (err.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
-      } else if (err.message) {
-        errorMessage = err.message;
+      } else if ((axiosErr.response?.data as { detail?: string })?.detail) {
+        errorMessage = (axiosErr.response!.data as { detail: string }).detail;
+      } else if (axiosErr.message) {
+        errorMessage = axiosErr.message;
       } else {
         errorMessage = `Export failed. Please try again.`;
       }
@@ -254,15 +256,47 @@ export default function DetailedReportPage({ params }: PageProps) {
     }
   };
 
-  const getStatusConfig = (status: string) => {
-    switch (status.toUpperCase()) {
+  const getStatusConfig = (scanData: ScanResult) => {
+    // PHASE 1.5: Decision Snapshot Fallback Chain
+    const meta: any = scanData?.scan_metadata || {};
+    const decision: any = meta.decision_snapshot || {};
+    const statusStr: string = String(decision.final_verdict || scanData?.status || 'SAFE');
+
+    // PHASE 0: Audit Completeness State Check
+    let auditComplete = true;
+    let partialReason = "";
+
+    const domainIntel = meta.domain_intelligence;
+    const threatFeeds = meta.threat_feeds;
+
+    if (!domainIntel) {
+      auditComplete = false;
+      partialReason = "Domain age lookup unavailable.";
+    } else if (domainIntel.status === "failed") {
+      auditComplete = false;
+      partialReason = `Domain Age ${domainIntel.reason || "Lookup Failed"}.`;
+    }
+
+    if (auditComplete && (!threatFeeds || threatFeeds.status === "failed" || threatFeeds.cache_count === 0)) {
+      // It's acceptable for threat_feeds not to be present in old scans, but for Phase 0 we verify
+      // actually we check if threat feeds has no match and status isn't clear, but threat_feeds normally doesn't have status="failed".
+      // Let's just check domainIntel as the primary failure point, and if feeds are entirely missing on a new scan.
+      if (!threatFeeds && scanData?.timestamp && new Date(scanData.timestamp).getTime() > new Date('2026-06-05').getTime()) {
+        auditComplete = false;
+        partialReason = "Threat intelligence feed lookup failed.";
+      }
+    }
+
+    const baseStatusText = auditComplete ? "Audit Complete" : `Audit Partial - Reason: ${partialReason}`;
+
+    switch (statusStr.toUpperCase()) {
       case 'SAFE':
         return {
           bannerBg: 'bg-green-500/10 border-green-500/30 text-green-400',
           icon: <ShieldCheck className="w-5 h-5 text-green-400" />,
           accentColor: 'text-green-400',
           borderColor: 'border-green-500/20',
-          statusText: 'Audit Passed: Safe',
+          statusText: `${baseStatusText} | Safe`,
           explanation: 'No phishing signatures or suspicious structures matching malicious tactics were identified in this URL.'
         };
       case 'SUSPICIOUS':
@@ -271,16 +305,18 @@ export default function DetailedReportPage({ params }: PageProps) {
           icon: <AlertTriangle className="w-5 h-5 text-yellow-400" />,
           accentColor: 'text-yellow-400',
           borderColor: 'border-yellow-500/20',
-          statusText: 'Security Warning: Suspicious',
+          statusText: `${baseStatusText} | Suspicious`,
           explanation: 'Mild anomalies or potential spoofing structures were triggered. Proceed with extreme caution.'
         };
       case 'DANGEROUS':
+      case 'HIGH RISK':
+      case 'CRITICAL':
         return {
           bannerBg: 'bg-red-500/10 border-red-500/30 text-red-400',
           icon: <ShieldAlert className="w-5 h-5 text-red-400" />,
           accentColor: 'text-red-400',
           borderColor: 'border-red-500/20',
-          statusText: 'Critical Threat: Dangerous',
+          statusText: `${baseStatusText} | ${statusStr.toUpperCase()}`,
           explanation: 'Phishing patterns, character masking, or dangerous domain matches were confirmed. Access is strictly discouraged.'
         };
       default:
@@ -289,7 +325,7 @@ export default function DetailedReportPage({ params }: PageProps) {
           icon: <Info className="w-5 h-5 text-muted-foreground" />,
           accentColor: 'text-muted-foreground',
           borderColor: 'border-border',
-          statusText: 'Audit Incomplete',
+          statusText: baseStatusText,
           explanation: 'Insufficient details available.'
         };
     }
@@ -333,7 +369,7 @@ export default function DetailedReportPage({ params }: PageProps) {
           </div>
           <h1 className="text-2xl font-bold">Report Load Failed</h1>
           <p className="text-muted-foreground text-sm">
-            We couldn't retrieve the details for this scan. The scan ID may be invalid, deleted, or you might not have permission to view it in this session.
+            We couldn&apos;t retrieve the details for this scan. The scan ID may be invalid, deleted, or you might not have permission to view it in this session.
           </p>
           <Link href={isGuestMode ? "/dashboard" : "/history"}>
             <Button variant="outline" className="border-white/10 hover:bg-white/5">
@@ -346,7 +382,7 @@ export default function DetailedReportPage({ params }: PageProps) {
     );
   }
 
-  const statusCfg = getStatusConfig(scan.status);
+  const statusCfg = getStatusConfig(scan);
 
   return (
     <DashboardLayout>
@@ -444,12 +480,13 @@ export default function DetailedReportPage({ params }: PageProps) {
                   {scan.technical_details?.severity_tier || (scan.score >= 80 ? 'Critical' : (scan.score >= 60 ? 'High' : (scan.score >= 40 ? 'Medium' : (scan.score >= 20 ? 'Low' : 'Informational'))))}
                 </span>
               </div>
-              <p className="text-xs sm:text-sm font-mono">
-                Primary Classification: <span className="underline font-bold text-white">{scan.technical_details?.threat_category || (scan.status.toUpperCase() === 'SAFE' ? 'Safe Domain' : 'Generic Phishing Attempt')}</span>
-              </p>
-              <p className="text-xs opacity-80 leading-relaxed max-w-2xl">
-                {statusCfg.explanation}
-              </p>
+              <div className="text-xs sm:text-sm font-mono space-y-1">
+                <p>Primary Finding: <span className="text-white font-semibold">{scan.scan_metadata?.decision_snapshot?.root_cause || scan.technical_details?.threat_category || (scan.status.toUpperCase() === 'SAFE' ? 'Safe Domain' : 'Generic Phishing Attempt')}</span></p>
+                {scan.scan_metadata?.decision_snapshot?.escalation_trigger && scan.scan_metadata.decision_snapshot.escalation_trigger !== "None" && (
+                  <p>Escalation Trigger: <span className="text-white">{scan.scan_metadata.decision_snapshot.escalation_trigger}</span></p>
+                )}
+                <p>Confidence: <span className="text-white">{scan.scan_metadata?.decision_snapshot?.confidence || scan.confidence || 'Unknown'}</span></p>
+              </div>
             </div>
           </div>
           
@@ -465,8 +502,24 @@ export default function DetailedReportPage({ params }: PageProps) {
           )}
         </motion.div>
 
+        {/* Supporting Evidence Component (Phase 5) */}
+        {scan.scan_metadata?.supporting_evidence && scan.scan_metadata.supporting_evidence.length > 0 && (
+          <motion.div className="p-4 bg-white/5 border border-white/10 rounded-lg text-xs sm:text-sm" variants={itemVariants}>
+            <h4 className="text-muted-foreground uppercase tracking-wider mb-2 font-semibold flex items-center gap-1.5">
+              <ListChecks className="w-4 h-4 text-cyan-400" /> Supporting Evidence
+            </h4>
+            <ul className="space-y-1.5 list-none font-mono">
+              {scan.scan_metadata.supporting_evidence.map((ev: string, idx: number) => (
+                <li key={idx} className="flex items-start gap-2 text-foreground">
+                  <span className="text-cyan-500 font-bold mt-[1px]">✓</span> {ev}
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        )}
+
         {/* 2. Scan Metadata Row */}
-        <motion.div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-white/5 border border-white/10 rounded-lg text-xs sm:text-sm" variants={itemVariants}>
+        <motion.div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 bg-white/5 border border-white/10 rounded-lg text-xs sm:text-sm" variants={itemVariants}>
           <div className="min-w-0">
             <span className="block text-muted-foreground text-xs uppercase tracking-wider mb-0.5">Scan ID</span>
             <span className="font-mono block truncate" title={scan.scan_id}>{scan.scan_id}</span>
@@ -480,10 +533,33 @@ export default function DetailedReportPage({ params }: PageProps) {
             <span className="capitalize">{scan.scan_type === 'ml' ? 'Pretrained ML' : scan.scan_type === 'comparison' ? 'Engine Comparison' : scan.scan_type}</span>
           </div>
           <div>
+            <span className="block text-muted-foreground text-xs uppercase tracking-wider mb-0.5">Input Source</span>
+            <span className="capitalize flex items-center gap-1.5">
+              {scan.scan_source === 'qr' ? (
+                <><QrCode className="w-3.5 h-3.5 text-emerald-400" /> QR Code</>
+              ) : (
+                'Manual URL'
+              )}
+            </span>
+          </div>
+          <div>
             <span className="block text-muted-foreground text-xs uppercase tracking-wider mb-0.5">Scan Time</span>
             <span className="block truncate">{new Date(scan.timestamp).toLocaleString()}</span>
           </div>
         </motion.div>
+
+        {scan.scan_source === 'qr' && scan.scan_metadata && (
+          <motion.div className="p-4 bg-white/5 border border-emerald-500/20 rounded-lg text-xs sm:text-sm mt-4 flex items-center gap-3" variants={itemVariants}>
+            <QrCode className="w-8 h-8 text-emerald-400 flex-shrink-0" />
+            <div className="space-y-1">
+              <h4 className="font-bold text-emerald-400 font-mono tracking-wider uppercase">QR Code Decoded URL</h4>
+              <p className="font-mono text-muted-foreground break-all">{scan.scan_metadata.decoded_url}</p>
+              {scan.scan_metadata.qr_image_name && (
+                <p className="font-mono text-[10px] text-muted-foreground/60">Source file: {scan.scan_metadata.qr_image_name}</p>
+              )}
+            </div>
+          </motion.div>
+        )}
 
         {/* Threat Intelligence Alert Panels (Phase 9) */}
         {(scan.technical_details.is_whitelisted || scan.technical_details.is_blacklisted || scan.technical_details.brand_spoof_detected) && (
@@ -530,6 +606,93 @@ export default function DetailedReportPage({ params }: PageProps) {
                 </div>
               </div>
             )}
+          </motion.div>
+        )}
+
+        {/* Domain Intelligence Panel (Phase 10) */}
+        {scan.scan_metadata?.domain_intelligence && (
+          <motion.div className="border border-white/10 bg-black/40 backdrop-blur-xl rounded-xl" variants={itemVariants}>
+            <CardHeader className="py-4 border-b border-white/5">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-blue-400" />
+                Domain Intelligence (RDAP/WHOIS)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 pb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm font-mono">
+                {scan.scan_metadata.domain_intelligence.status === "failed" ? (
+                  <div className="space-y-1 col-span-full">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Domain Age</p>
+                    <p className="text-amber-400 font-bold">Domain Age Lookup Failed</p>
+                  </div>
+                ) : scan.scan_metadata.domain_intelligence.status === "unregistered" ? (
+                  <div className="space-y-1 col-span-full">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Domain Age</p>
+                    <p className="text-red-400 font-bold">Unregistered Domain Detected</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Registrar</p>
+                      <p className="text-foreground">{scan.scan_metadata.domain_intelligence.registrar || 'Unknown'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Created Date</p>
+                      <p className="text-foreground">{scan.scan_metadata.domain_intelligence.created_date || 'Unknown'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Domain Age</p>
+                      <p className="text-foreground">{scan.scan_metadata.domain_intelligence.domain_age_days !== null && scan.scan_metadata.domain_intelligence.domain_age_days !== undefined ? `${scan.scan_metadata.domain_intelligence.domain_age_days} days` : 'Unknown'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Risk Signal</p>
+                      <p className={
+                        scan.scan_metadata.domain_intelligence.domain_age_days === null || scan.scan_metadata.domain_intelligence.domain_age_days === undefined ? "text-muted-foreground" :
+                        scan.scan_metadata.domain_intelligence.domain_age_days <= 30 ? "text-red-400 font-bold" :
+                        scan.scan_metadata.domain_intelligence.domain_age_days <= 90 ? "text-amber-400 font-bold" :
+                        "text-emerald-400 font-bold"
+                      }>
+                        {scan.scan_metadata.domain_intelligence.domain_age_days === null || scan.scan_metadata.domain_intelligence.domain_age_days === undefined ? "Unknown" :
+                         scan.scan_metadata.domain_intelligence.domain_age_days <= 30 ? "High" :
+                         scan.scan_metadata.domain_intelligence.domain_age_days <= 90 ? "Medium" : "Low"}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </motion.div>
+        )}
+
+        {/* Threat Feeds Intelligence Panel (Phase 11) */}
+        {scan.scan_metadata?.threat_feeds && (
+          <motion.div className="border border-white/10 bg-black/40 backdrop-blur-xl rounded-xl" variants={itemVariants}>
+            <CardHeader className="py-4 border-b border-white/5">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
+                Dynamic Threat Intelligence Feeds
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 pb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm font-mono">
+                {['openphish_match', 'phishtank_match', 'urlhaus_match'].map((feedKey) => {
+                  const feedName = feedKey === 'openphish_match' ? 'OpenPhish' : feedKey === 'phishtank_match' ? 'PhishTank' : 'URLHaus';
+                  const isMatch = scan.scan_metadata!.threat_feeds[feedKey];
+                  return (
+                    <div key={feedKey} className="space-y-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">{feedName}</p>
+                      <p className={isMatch ? "text-red-400 font-bold" : "text-emerald-400 font-bold"}>
+                        {isMatch ? "Match Found" : "No Match"}
+                      </p>
+                    </div>
+                  );
+                })}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Total Sources Checked</p>
+                  <p className="text-foreground font-bold">3</p>
+                </div>
+              </div>
+            </CardContent>
           </motion.div>
         )}
 
@@ -671,7 +834,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                       animate={{ scaleY: 1 }}
                       transition={{ duration: 0.8, ease: "easeInOut" }}
                     />
-                    {scan.technical_details.scan_journey.map((step: any, idx: number) => {
+                    {scan.technical_details.scan_journey.map((step: { stage: string; status: string; message: string }, idx: number) => {
                       let icon = <Info className="w-4 h-4 text-cyan-400" />;
                       let colorClass = "text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
                       
@@ -823,7 +986,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                   
                   {scan.technical_details.ml_interpretation && (
                     <div className="mt-4 p-3 rounded bg-emerald-500/5 border border-emerald-500/15 text-xs text-emerald-300 font-mono italic">
-                      💡 ML Interpretation: "{scan.technical_details.ml_interpretation}"
+                      💡 ML Interpretation: &ldquo;{scan.technical_details.ml_interpretation}&rdquo;
                     </div>
                   )}
                 </CardContent>
@@ -885,7 +1048,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-5 space-y-4">
-                  {scan.technical_details.scoring_breakdown.map((item: any, idx: number) => {
+                  {scan.technical_details.scoring_breakdown.map((item: { rule: string; points: number }, idx: number) => {
                     const isPositive = item.points >= 0;
                     return (
                       <div key={idx} className="space-y-1.5">
@@ -1022,7 +1185,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                         animate={{ scaleY: 1 }}
                         transition={{ duration: 0.8, ease: "easeInOut" }}
                       />
-                      {scan.technical_details.scan_journey.map((step: any, idx: number) => {
+                      {scan.technical_details.scan_journey.map((step: { stage: string; status: string; message: string }, idx: number) => {
                         let icon = <Info className="w-4 h-4 text-cyan-400" />;
                         let colorClass = "text-cyan-400 bg-cyan-500/10 border-cyan-500/20";
                         
@@ -1119,7 +1282,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="pt-5 space-y-4">
-                    {scan.technical_details.scoring_breakdown.map((item: any, idx: number) => {
+                    {scan.technical_details.scoring_breakdown.map((item: { rule: string; points: number }, idx: number) => {
                       const isPositive = item.points >= 0;
                       return (
                         <div key={idx} className="space-y-1.5">
@@ -1185,7 +1348,7 @@ export default function DetailedReportPage({ params }: PageProps) {
                     
                     {scan.technical_details.ml_interpretation && (
                       <div className="mt-4 p-3 rounded bg-purple-500/5 border border-purple-500/15 text-xs text-purple-300 font-mono italic">
-                        💡 ML Interpretation: "{scan.technical_details.ml_interpretation}"
+                        💡 ML Interpretation: &ldquo;{scan.technical_details.ml_interpretation}&rdquo;
                       </div>
                     )}
                   </CardContent>

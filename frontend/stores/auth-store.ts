@@ -6,17 +6,23 @@ import { safeGetItem, safeSetItem, safeRemoveItem } from '@/lib/utils/localStora
 const GUEST_KEY = 'phishguard_is_guest';
 const GUEST_SCANS_KEY = 'phishguard_guest_scans';
 
+// Minimal type for the PWA beforeinstallprompt event
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
 interface AuthState {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
   isGuest: boolean;
-  deferredPrompt: any;
+  deferredPrompt: BeforeInstallPromptEvent | null;
   setUser: (user: User | null) => void;
   setSession: (session: Session | null) => void;
   setLoading: (isLoading: boolean) => void;
   setGuest: (isGuest: boolean) => void;
-  setDeferredPrompt: (prompt: any) => void;
+  setDeferredPrompt: (prompt: BeforeInstallPromptEvent | null) => void;
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
 }

@@ -25,6 +25,9 @@ export const API_ENDPOINTS = {
     GUEST_PDF: '/reports/export/pdf',
     GUEST_JSON: '/reports/export/json',
     GUEST_TXT: '/reports/export/txt',
+  },
+  QR: {
+    DECODE: '/qr/decode',
   }
 };
 

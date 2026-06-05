@@ -28,6 +28,21 @@ def scan_url_rule_based(request: ScanRequest, authorization: Optional[str] = Hea
     try:
         report = scanner.analyze_url(request.url)
         logger.info("Analysis complete. Score=%d, Status=%s", report.score, report.status)
+        
+        # Attach Domain Intelligence to Metadata
+        from app.services.intelligence_engine.domain_age import assess_domain_age
+        domain = patterns.extract_domain(request.url)
+        da_data = assess_domain_age(domain)
+        if da_data:
+            if not request.scan_metadata:
+                request.scan_metadata = {}
+            request.scan_metadata["domain_intelligence"] = da_data
+            
+        if report.technical_details.threat_feeds:
+            if not request.scan_metadata:
+                request.scan_metadata = {}
+            request.scan_metadata["threat_feeds"] = report.technical_details.threat_feeds
+
     except ValueError as ve:
         logger.warning("Validation error: %s", ve)
         raise HTTPException(status_code=400, detail=str(ve))
@@ -55,6 +70,10 @@ def scan_url_rule_based(request: ScanRequest, authorization: Optional[str] = Hea
         logger.info("No valid Authorization header — scan will not be persisted.")
 
     # --- Step 3: Persist to Supabase ---
+    if not request.scan_metadata:
+        request.scan_metadata = {}
+    request.scan_metadata.update(report.scan_metadata)
+    
     if user_id:
         # DB status must be lowercase to satisfy the check constraint
         db_status = report.status.lower()
@@ -69,7 +88,9 @@ def scan_url_rule_based(request: ScanRequest, authorization: Optional[str] = Hea
             "reasons": report.reasons,
             "technical_details": report.technical_details.model_dump(),
             "recommendation": report.recommendation,
-            "created_at": report.timestamp
+            "created_at": report.timestamp,
+            "scan_source": request.scan_source,
+            "scan_metadata": request.scan_metadata
         }
         
         logger.info("Inserting scan payload into Supabase: id=%s, user_id=%s, url=%s, status=%s, score=%d",
@@ -87,6 +108,8 @@ def scan_url_rule_based(request: ScanRequest, authorization: Optional[str] = Hea
         logger.info("Skipping DB insert — user not authenticated.")
 
     logger.info("Returning report to client. Status=%s", report.status)
+    report.scan_source = request.scan_source
+    report.scan_metadata = request.scan_metadata
     return report
 
 @router.post("/ml", response_model=ScanResponse)
@@ -107,16 +130,35 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
         logger.exception("Unexpected error during ML analysis")
         raise HTTPException(status_code=503, detail=f"ML Engine currently unavailable: {str(e)}")
 
-    # 2. Layered Intelligence (Phase 9)
+    # 2. Layered Intelligence (Phase 9 & 10)
     from app.services.intelligence_engine.reputation import assess_reputation
     from app.services.spoof_detection.levenshtein_detector import check_brand_spoof
+    from app.services.intelligence_engine.domain_age import assess_domain_age, calculate_domain_age_score
+    from app.services.intelligence_engine.threat_feeds.feed_engine import check_threat_feeds, normalize_url_for_cache
     
     domain = patterns.extract_domain(request.url)
     reputation_res = assess_reputation(request.url, domain)
     spoof_res = check_brand_spoof(domain)
+    domain_age_data = assess_domain_age(domain)
+    threat_feeds_data = check_threat_feeds(normalize_url_for_cache(request.url))
     
     intelligence_flags = []
     scoring_breakdown = feats.get("scoring_breakdown", [])
+    
+    if domain_age_data:
+        age_days = domain_age_data.get("domain_age_days")
+        if age_days is not None:
+            age_score = calculate_domain_age_score(age_days)
+            if age_score > 0:
+                score += age_score
+                reasons.append(f"Domain was registered recently ({age_days} days ago)")
+                intelligence_flags.append(f"Young Domain: {age_days} days old")
+                scoring_breakdown.append({"rule": f"Newly Registered Domain", "points": age_score})
+        elif domain_age_data.get("status") == "unregistered":
+            score += 35
+            reasons.append("Domain appears unregistered but is active (Highly Suspicious)")
+            intelligence_flags.append("Unregistered Domain")
+            scoring_breakdown.append({"rule": "Active Unregistered Domain", "points": 35})
     
     if reputation_res["is_whitelisted"]:
         score += reputation_res["reputation_score_delta"]
@@ -132,6 +174,20 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
         intelligence_flags.append(f"Blacklisted: {reputation_res['blacklist_indicator']}")
         scoring_breakdown.append({"rule": f"Threat Intel Blacklist Match", "points": reputation_res["reputation_score_delta"]})
         
+    if threat_feeds_data.get("matched_sources"):
+        matched_str = ", ".join(threat_feeds_data["matched_sources"])
+        if threat_feeds_data.get("openphish_match"):
+            score += 50
+            scoring_breakdown.append({"rule": "OpenPhish Threat Feed Match", "points": 50})
+        if threat_feeds_data.get("phishtank_match"):
+            score += 50
+            scoring_breakdown.append({"rule": "PhishTank Threat Feed Match", "points": 50})
+        if threat_feeds_data.get("urlhaus_match"):
+            score += 60
+            scoring_breakdown.append({"rule": "URLHaus Threat Feed Match", "points": 60})
+        reasons.append(f"Flagged by dynamic Threat Intelligence Feed(s): {matched_str}")
+        intelligence_flags.append(f"Threat Feed Match: {matched_str}")
+        
     if spoof_res["is_spoofed"]:
         score += 25
         reasons.append(spoof_res["explanation"])
@@ -140,11 +196,11 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
 
     score = max(0, min(score, 100))
     if score < 35:
-        status = "SAFE"
+        base_status = "SAFE"
     elif score < 70:
-        status = "SUSPICIOUS"
+        base_status = "SUSPICIOUS"
     else:
-        status = "DANGEROUS"
+        base_status = "DANGEROUS"
 
     # 3. Extract JWT and verify user (bypass RLS for save)
     user_id = None
@@ -174,20 +230,33 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
         "suspected_brand": spoof_res["suspected_brand"],
         "spoof_explanation": spoof_res["explanation"],
         "spoof_type": spoof_res["spoof_type"],
+        "domain_age_days": domain_age_data["domain_age_days"] if domain_age_data else None,
         "domain": domain,
         "contains_ip": feats["contains_ip"] == 1,
         "subdomain_count": int(feats["subdomain_count"]),
         "encoded_char_presence": feats["encoded_char_presence"] == 1,
         "redirect_pattern_detected": feats["redirect_pattern"] == 1,
         "scoring_breakdown": scoring_breakdown,
+        "model_outputs": {"random_forest": {"score": score}},
         "ml_result": {"score": score, "confidence": confidence},
-        "confidence": confidence
+        "confidence": confidence,
+        "threat_feeds": threat_feeds_data
     }
     threat_category, secondary_tags = classifier.determine_category_and_tags(score, temp_details, reasons)
-    severity_tier = classifier.determine_severity(score, reputation_res["is_blacklisted"])
+    final_verdict, conf_str, esc_trigger, esc_reason, score, evidence_snapshot = classifier.evaluate_final_verdict(score, temp_details)
+    
     consensus_level = classifier.determine_consensus(score, "ml", temp_details)
     educational_insight = classifier.generate_educational_insight(threat_category, spoof_res["suspected_brand"])
-    scan_journey = classifier.generate_scan_journey(request.url, domain, score, temp_details)
+    
+    from app.services import recommendation_engine
+    recommendation = recommendation_engine.generate_recommendation(
+        final_verdict=final_verdict,
+        score=score,
+        reasons=reasons,
+        technical_details=temp_details
+    )
+    
+    scan_journey = classifier.generate_scan_journey(request.url, domain, score, temp_details, final_verdict, conf_str, consensus_level, esc_trigger, esc_reason, recommendation)
 
     details = TechnicalDetails(
         https=feats["https"] == 1,
@@ -219,42 +288,84 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
         # Phase 10 fields
         threat_category=threat_category,
         secondary_threat_tags=secondary_tags,
-        severity_tier=severity_tier,
+        severity_tier=final_verdict,  # Map final_verdict to severity_tier for backward compatibility
         consensus_level=consensus_level,
         educational_insight=educational_insight,
-        scan_journey=scan_journey
+        scan_journey=scan_journey,
+        threat_feeds=threat_feeds_data
     )
+
+
+    # 5. Populate Metadata
+    if not request.scan_metadata:
+        request.scan_metadata = {}
+        
+    if domain_age_data:
+        request.scan_metadata["domain_intelligence"] = domain_age_data
+        
+    if threat_feeds_data:
+        request.scan_metadata["threat_feeds"] = threat_feeds_data
+        
+    evidence = []
+    if spoof_res["is_spoofed"]:
+        evidence.append("Brand Spoof Detection Triggered")
+    if threat_category:
+        evidence.append(f"{threat_category} Classification")
+    evidence.append(f"ML Engine Score: {score}/100")
+    
+    if threat_feeds_data and threat_feeds_data.get("matched_sources"):
+        evidence.append("Threat Feed Result: Match Found")
+    else:
+        evidence.append("Threat Feed Result: No Match")
+        
+    if domain_age_data:
+        status_str = domain_age_data.get("status", "unknown").capitalize()
+        evidence.append(f"Domain Intelligence Status: {status_str}")
+
+    request.scan_metadata["decision_snapshot"] = {
+        "final_verdict": final_verdict,
+        "confidence": conf_str,
+        "consensus": consensus_level,
+        "escalation_trigger": esc_trigger,
+        "root_cause": esc_reason
+    }
+    request.scan_metadata["evidence_snapshot"] = evidence_snapshot
+    request.scan_metadata["supporting_evidence"] = evidence
 
     response = ScanResponse(
         scan_id=scan_id,
         scan_type="ml",
         scanned_url=request.url,
-        status=status,
+        status=final_verdict,
         score=score,
         reasons=reasons,
         technical_details=details,
         recommendation=recommendation,
         timestamp=timestamp,
-        confidence=confidence
+        confidence=str(confidence) if confidence is not None else None,
+        scan_source=request.scan_source,
+        scan_metadata=request.scan_metadata
     )
 
-    # 5. Save to Database
+    # 6. Save to Database
     if user_id:
-        db_status = status.lower()
+        db_status = final_verdict
         db_tech_details = details.model_dump()
-        db_tech_details["confidence"] = confidence  # Store confidence inside JSON
+        db_tech_details["confidence"] = confidence  # Store numerical confidence inside JSON
         
         data = {
             "id": scan_id,
             "user_id": user_id,
             "url": request.url,
             "scan_type": "ml",
-            "status": db_status,          # safe / suspicious / dangerous
+            "status": db_status,
             "score": score,
             "reasons": reasons,
             "technical_details": db_tech_details,
             "recommendation": recommendation,
-            "created_at": timestamp
+            "created_at": timestamp,
+            "scan_source": request.scan_source,
+            "scan_metadata": request.scan_metadata
         }
         
         logger.info("Inserting ML scan payload into Supabase: id=%s, user_id=%s, status=%s", scan_id, user_id, db_status)
@@ -299,6 +410,12 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
     ml_reputation = assess_reputation(request.url, domain)
     ml_spoof = check_brand_spoof(domain)
     
+    from app.services.intelligence_engine.domain_age import assess_domain_age, calculate_domain_age_score
+    domain_age_data = assess_domain_age(domain)
+    
+    from app.services.intelligence_engine.threat_feeds.feed_engine import check_threat_feeds, normalize_url_for_cache
+    threat_feeds_data = check_threat_feeds(normalize_url_for_cache(request.url))
+    
     if ml_reputation["is_whitelisted"]:
         ml_score += ml_reputation["reputation_score_delta"]
     if ml_reputation["is_blacklisted"]:
@@ -308,6 +425,24 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
     if ml_spoof["is_spoofed"]:
         ml_score += 25
         
+    if threat_feeds_data.get("matched_sources"):
+        if threat_feeds_data.get("openphish_match"): ml_score += 50
+        if threat_feeds_data.get("phishtank_match"): ml_score += 50
+        if threat_feeds_data.get("urlhaus_match"): ml_score += 60
+        matched_str = ", ".join(threat_feeds_data["matched_sources"])
+        ml_reasons.append(f"Flagged by dynamic Threat Intelligence Feed(s): {matched_str}")
+        
+    if domain_age_data:
+        age_days = domain_age_data.get("domain_age_days")
+        if age_days is not None:
+            age_score = calculate_domain_age_score(age_days)
+            if age_score > 0:
+                ml_score += age_score
+                ml_reasons.append(f"Domain was registered recently ({age_days} days ago)")
+        elif domain_age_data.get("status") == "unregistered":
+            ml_score += 35
+            ml_reasons.append("Domain appears unregistered but is active (Highly Suspicious)")
+            
     ml_score = max(0, min(ml_score, 100))
     if ml_score < 35:
         ml_status = "SAFE"
@@ -381,12 +516,7 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
     combined_score = max(rule_report.score, ml_score)
     
     # Combined status
-    if combined_score < 35:
-        combined_status = "SAFE"
-    elif combined_score < 70:
-        combined_status = "SUSPICIOUS"
-    else:
-        combined_status = "DANGEROUS"
+    # Base combined status mapping is now irrelevant since final_verdict handles it.
         
     # Explainable comparison note (why engines differ or agree)
     if abs(rule_report.score - ml_score) <= 15:
@@ -402,14 +532,7 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
     else:
         interpretation = f"The Rule-based engine flagged a higher threat level (+{rule_report.score - ml_score} points difference) due to strict keyword/TLD rules or URL shortener flags that the ML model evaluated with lower statistical weight."
 
-    # Unified security recommendation
-    unified_rec = f"{interpretation} Recommendation: "
-    if combined_status == "SAFE":
-        unified_rec += "No specific action required. The URL is safe to visit."
-    elif combined_status == "SUSPICIOUS":
-        unified_rec += "Proceed with caution. Do not input credentials or financial details on this site."
-    else:
-        unified_rec += "Block connection. This page exhibits highly dangerous phishing indicators."
+    # Recommendation logic will be handled after evaluate_final_verdict
 
     # Combined reasons (deduplicated)
     combined_reasons = sorted(list(set(rule_report.reasons) | set(ml_reasons)))
@@ -442,6 +565,7 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
         "suspected_brand": rule_tech.suspected_brand,
         "spoof_explanation": rule_tech.spoof_explanation,
         "spoof_type": rule_tech.spoof_type,
+        "domain_age_days": domain_age_data["domain_age_days"] if domain_age_data else None,
         "domain": rule_tech.domain,
         "contains_ip": rule_tech.contains_ip,
         "subdomain_count": rule_tech.subdomain_count,
@@ -450,13 +574,30 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
         "scoring_breakdown": rule_tech.scoring_breakdown,
         "ml_result": ml_res,
         "rule_based_result": rule_res,
-        "score_difference": abs(rule_report.score - ml_score)
+        "score_difference": abs(rule_report.score - ml_score),
+        "threat_feeds": threat_feeds_data
     }
     threat_category, secondary_tags = classifier.determine_category_and_tags(combined_score, temp_details, combined_reasons)
-    severity_tier = classifier.determine_severity(combined_score, rule_tech.is_blacklisted)
+    final_verdict, conf_str, esc_trigger, esc_reason, combined_score, evidence_snapshot = classifier.evaluate_final_verdict(combined_score, temp_details)
+    
     consensus_level = classifier.determine_consensus(combined_score, "comparison", temp_details)
     educational_insight = classifier.generate_educational_insight(threat_category, rule_tech.suspected_brand)
-    scan_journey = classifier.generate_scan_journey(request.url, rule_tech.domain, combined_score, temp_details)
+    
+    from app.services import recommendation_engine
+    recommendation = recommendation_engine.generate_recommendation(
+        final_verdict=final_verdict,
+        score=combined_score,
+        reasons=combined_reasons,
+        technical_details=temp_details
+    )
+    
+    # Store interpretation note dynamically in scan_metadata
+    if interpretation:
+        if not request.scan_metadata:
+            request.scan_metadata = {}
+        request.scan_metadata["technical_notes"] = interpretation
+        
+    scan_journey = classifier.generate_scan_journey(request.url, rule_tech.domain, combined_score, temp_details, final_verdict, conf_str, consensus_level, esc_trigger, esc_reason, recommendation)
 
     details = TechnicalDetails(
         https=rule_tech.https,
@@ -471,6 +612,7 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
         query_parameter_count=int(ml_feats.get("query_parameter_count", 0)),
         entropy_score=float(ml_feats.get("entropy_score", 0.0)),
         scoring_breakdown=rule_tech.scoring_breakdown, # Default rule breakdown
+        model_outputs={"random_forest": {"score": ml_score}},
         rule_based_result=rule_res,
         ml_result=ml_res,
         shared_indicators=shared,
@@ -493,41 +635,85 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
         # Phase 10 fields
         threat_category=threat_category,
         secondary_threat_tags=secondary_tags,
-        severity_tier=severity_tier,
+        severity_tier=final_verdict,
         consensus_level=consensus_level,
         educational_insight=educational_insight,
-        scan_journey=scan_journey
+        scan_journey=scan_journey,
+        threat_feeds=threat_feeds_data
     )
+
+
+    # 5. Populate Metadata
+    if not request.scan_metadata:
+        request.scan_metadata = {}
+        
+    if domain_age_data:
+        request.scan_metadata["domain_intelligence"] = domain_age_data
+        
+    if threat_feeds_data:
+        request.scan_metadata["threat_feeds"] = threat_feeds_data
+        
+    evidence = []
+    if rule_tech.brand_spoof_detected:
+        evidence.append("Brand Spoof Detection Triggered")
+    if threat_category:
+        evidence.append(f"{threat_category} Classification")
+    evidence.append(f"Rule Engine Score: {rule_report.score}/100")
+    evidence.append(f"ML Engine Score: {ml_score}/100")
+    
+    if threat_feeds_data and threat_feeds_data.get("matched_sources"):
+        evidence.append("Threat Feed Result: Match Found")
+    else:
+        evidence.append("Threat Feed Result: No Match")
+        
+    if domain_age_data:
+        status_str = domain_age_data.get("status", "unknown").capitalize()
+        evidence.append(f"Domain Intelligence Status: {status_str}")
+
+    request.scan_metadata["decision_snapshot"] = {
+        "final_verdict": final_verdict,
+        "confidence": conf_str,
+        "consensus": consensus_level,
+        "escalation_trigger": esc_trigger,
+        "root_cause": esc_reason
+    }
+    request.scan_metadata["evidence_snapshot"] = evidence_snapshot
+    request.scan_metadata["supporting_evidence"] = evidence
 
     response = ScanResponse(
         scan_id=scan_id,
         scan_type="comparison",
         scanned_url=request.url,
-        status=combined_status,
+        status=final_verdict,
         score=combined_score,
         reasons=combined_reasons,
         technical_details=details,
-        recommendation=unified_rec,
+        recommendation=recommendation,
         timestamp=timestamp,
-        confidence=ml_confidence
+        confidence=str(ml_confidence) if ml_confidence is not None else None,
+        scan_source=request.scan_source,
+        scan_metadata=request.scan_metadata
     )
 
-    # 5. Save to Database
+    # 6. Save to Database
     if user_id:
-        db_status = combined_status.lower()
+        db_status = final_verdict
         db_tech_details = details.model_dump()
+        db_tech_details["confidence"] = ml_confidence  # Store numerical confidence
         
         data = {
             "id": scan_id,
             "user_id": user_id,
             "url": request.url,
             "scan_type": "comparison",
-            "status": db_status,          # safe / suspicious / dangerous
+            "status": db_status,
             "score": combined_score,
             "reasons": combined_reasons,
             "technical_details": db_tech_details,
-            "recommendation": unified_rec,
-            "created_at": timestamp
+            "recommendation": recommendation,
+            "created_at": timestamp,
+            "scan_source": request.scan_source,
+            "scan_metadata": request.scan_metadata
         }
         
         logger.info("Inserting Comparison scan payload into Supabase: id=%s, user_id=%s, status=%s", scan_id, user_id, db_status)
@@ -600,9 +786,12 @@ def get_scan_by_id(scan_id: str, user_id: str = Depends(get_current_user_id)):
         severity_tier=tech_data.get("severity_tier"),
         consensus_level=tech_data.get("consensus_level"),
         educational_insight=tech_data.get("educational_insight"),
-        scan_journey=tech_data.get("scan_journey")
+        scan_journey=tech_data.get("scan_journey"),
+        threat_feeds=tech_data.get("threat_feeds")
     )
 
+
+    conf = tech_data.get("confidence") or (tech_data.get("ml_result", {}).get("confidence") if tech_data.get("ml_result") else None)
 
     return ScanResponse(
         scan_id=scan_data.get("id"),
@@ -614,10 +803,12 @@ def get_scan_by_id(scan_id: str, user_id: str = Depends(get_current_user_id)):
         technical_details=tech_details,
         recommendation=scan_data.get("recommendation") or "",
         timestamp=str(scan_data.get("created_at", "")),
-        confidence=tech_data.get("confidence") or (tech_data.get("ml_result", {}).get("confidence") if tech_data.get("ml_result") else None)
+        confidence=str(conf) if conf is not None else None,
+        scan_source=scan_data.get("scan_source", "manual"),
+        scan_metadata=scan_data.get("scan_metadata", {})
+
+
+
+
     )
-
-
-
-
 

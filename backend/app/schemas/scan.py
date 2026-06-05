@@ -9,6 +9,8 @@ class ScanRequest(BaseModel):
         max_length=2048,
         description="The URL to scan. Must be between 1 and 2048 characters."
     )
+    scan_source: str = Field("manual", description="Source of the scan (manual or qr).")
+    scan_metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadata for the scan.")
 
     @field_validator("url")
     @classmethod
@@ -42,6 +44,7 @@ class TechnicalDetails(BaseModel):
     shared_indicators: Optional[List[str]] = None
     unique_findings: Optional[Dict[str, List[str]]] = None
     score_difference: Optional[int] = None
+    model_outputs: Optional[Dict[str, Any]] = None
 
     # Layered Threat Intelligence (Phase 9)
     intelligence_flags: Optional[List[str]] = None
@@ -64,6 +67,9 @@ class TechnicalDetails(BaseModel):
     educational_insight: Optional[str] = None
     scan_journey: Optional[List[Dict[str, Any]]] = None
 
+    # Threat Intelligence Feeds (Phase 11)
+    threat_feeds: Optional[Dict[str, Any]] = None
+
 
 
 class ScanResponse(BaseModel):
@@ -77,5 +83,9 @@ class ScanResponse(BaseModel):
     recommendation: str
     timestamp: str
     # ML-specific confidence (optional)
-    confidence: Optional[float] = None
+    confidence: Optional[str] = None
+    
+    # Metadata
+    scan_source: str = "manual"
+    scan_metadata: Dict[str, Any] = Field(default_factory=dict)
 

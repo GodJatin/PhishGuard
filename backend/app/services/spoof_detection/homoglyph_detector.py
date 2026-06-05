@@ -8,9 +8,12 @@ HOMOGLYPH_MAP = {
     '4': 'a',
     '5': 's',
     '8': 'b',
+    # Letter substitutions for lookalikes
+    'i': 'l',  # 'i' and 'l' are common homoglyphs in sans-serif fonts
     # Symbol substitutions
     '@': 'a',
     '$': 's',
+    '!': 'i',
     # Cyrillic lookalikes mapping to Latin counterparts
     '\u0430': 'a',  # Cyrillic small a
     '\u0441': 'c',  # Cyrillic small es (looks like c)
@@ -34,6 +37,9 @@ def normalize_homoglyphs(text: str) -> str:
     """
     if not text:
         return ""
+        
+    # Pre-lower map (for characters where casing changes lookalike behavior)
+    text = text.replace('I', 'l')
         
     text = text.lower()
     

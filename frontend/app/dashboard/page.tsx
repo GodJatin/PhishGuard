@@ -19,7 +19,7 @@ import {
   ShieldAlert, Search, Activity, Clock, ShieldCheck, 
   AlertTriangle, Loader2, Info, Brain, Cpu, TrendingUp,
   PieChart as PieIcon, BarChart3, ChevronRight, Terminal, ExternalLink,
-  Target, Shield, Eye, CheckCircle2
+  Target, Shield, Eye, CheckCircle2, QrCode, X
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { 
@@ -41,6 +41,8 @@ interface OverviewStats {
   latest_scan_timestamp: string | null;
   total_ml_percentage: number;
   total_rule_based_percentage: number;
+  manual_scan_count?: number;
+  qr_scan_count?: number;
   threat_category_counts?: Record<string, number>;
   spoofed_brand_counts?: Record<string, number>;
   severity_tier_counts?: Record<string, number>;
@@ -109,12 +111,13 @@ const AnimatedCounter = ({ value, duration = 800 }: { value: number; duration?: 
 };
 
 // Reusable custom chart tooltip with SOC aesthetic
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipPayloadItem { name: string; value: number; color?: string; fill?: string; }
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: TooltipPayloadItem[]; label?: string }) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-black/90 border border-white/10 p-3 rounded-lg text-xs space-y-1.5 shadow-[0_0_20px_rgba(0,0,0,0.8)] backdrop-blur-md">
         {label && <p className="font-mono text-muted-foreground border-b border-white/5 pb-1 mb-1">{label}</p>}
-        {payload.map((p: any, idx: number) => (
+        {payload.map((p: TooltipPayloadItem, idx: number) => (
           <div key={idx} className="flex items-center justify-between gap-4">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color || p.fill }} />
@@ -136,6 +139,35 @@ const comparisonLoadingStages = [
   "Generating comparative threat intelligence..."
 ];
 
+// Card Skeleton Loaders — defined at module scope to avoid 'cannot create components during render'
+const CardSkeleton = () => (
+  <Card className="border-white/10 bg-black/40 backdrop-blur-xl animate-pulse">
+    <CardHeader className="pb-2">
+      <div className="h-4 w-24 bg-white/10 rounded" />
+    </CardHeader>
+    <CardContent>
+      <div className="h-8 w-16 bg-white/10 rounded mb-2" />
+      <div className="h-3 w-32 bg-white/10 rounded" />
+    </CardContent>
+  </Card>
+);
+
+// Chart Skeleton Loaders — defined at module scope to avoid 'cannot create components during render'
+const ChartSkeleton = () => (
+  <Card className="border-white/10 bg-black/40 backdrop-blur-xl animate-pulse h-[350px]">
+    <CardHeader>
+      <div className="h-5 w-40 bg-white/10 rounded mb-2" />
+      <div className="h-4 w-60 bg-white/10 rounded" />
+    </CardHeader>
+    <CardContent className="h-[220px] flex items-end justify-between gap-4 px-8 pb-4">
+      <div className="w-full bg-white/5 rounded-t h-[40%]" />
+      <div className="w-full bg-white/5 rounded-t h-[75%]" />
+      <div className="w-full bg-white/5 rounded-t h-[50%]" />
+      <div className="w-full bg-white/5 rounded-t h-[90%]" />
+    </CardContent>
+  </Card>
+);
+
 export default function DashboardPage() {
   const { user, isGuest } = useAuthStore();
   const userName = user?.email?.split('@')[0] || 'User';
@@ -150,12 +182,16 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [guestHistory, setGuestHistory] = useState<ScanResult[]>([]);
   const [scanTakingLong, setScanTakingLong] = useState(false);
+  const [scanSource, setScanSource] = useState('manual');
+  const [scanMetadata, setScanMetadata] = useState<Record<string, string>>({});
+  const [isUploadingQR, setIsUploadingQR] = useState(false);
   const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // AbortController ref — cancels the in-flight scan request when user rescans or navigates away
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Prevent SSR/hydration issues with Recharts
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
@@ -163,13 +199,14 @@ export default function DashboardPage() {
   useEffect(() => {
     if (isGuest) {
       const stored = safeParseJSON<ScanResult[]>('phishguard_guest_scans', []);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGuestHistory(stored);
     }
   }, [isGuest]);
 
   // Progress pipeline steps
   useEffect(() => {
-    let interval: any;
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (isScanning) {
       interval = setInterval(() => {
         setPipelineActiveStep((prev) => {
@@ -178,6 +215,7 @@ export default function DashboardPage() {
         });
       }, 400);
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPipelineActiveStep(0);
     }
     return () => clearInterval(interval);
@@ -239,7 +277,7 @@ export default function DashboardPage() {
   const hasConnectionError = !isGuest && (isOverviewError || isTrendsError || isKeywordsError || isRecentThreatsError);
 
   const scanMutation = useMutation({
-    mutationFn: async (targetUrl: string) => {
+    mutationFn: async ({ targetUrl, source, metadata }: { targetUrl: string, source: string, metadata: Record<string, string> }) => {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -264,7 +302,7 @@ export default function DashboardPage() {
       
       const response = await axios.post(
         endpoint, 
-        { url: targetUrl },
+        { url: targetUrl, scan_source: source, scan_metadata: metadata },
         { headers, signal: controller.signal }
       );
       return response.data as ScanResult;
@@ -320,7 +358,7 @@ export default function DashboardPage() {
         }
       }, 600);
     },
-    onError: (error: any) => {
+    onError: (error: Error & { name?: string; code?: string; userMessage?: string; response?: { data?: { detail?: string; message?: string } } }) => {
       setIsScanning(false);
       // Clear abort controller and long-scan timeout
       abortControllerRef.current = null;
@@ -370,12 +408,43 @@ export default function DashboardPage() {
       toast("This engine is currently under development.", { icon: '🚧' });
       return;
     }
-    scanMutation.mutate(trimmedUrl);
+    scanMutation.mutate({ targetUrl: trimmedUrl, source: scanSource, metadata: scanMetadata });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !scanMutation.isPending) {
+    if (e.key === 'Enter' && !scanMutation.isPending && !isUploadingQR) {
       handleScan();
+    }
+  };
+
+  const handleQRUpload = async (file: File) => {
+    if (!file) return;
+    setIsUploadingQR(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const response = await axios.post(API_ENDPOINTS.QR.DECODE, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      
+      if (response.data && response.data.url) {
+        setUrl(response.data.url);
+        setScanSource('qr');
+        setScanMetadata({
+          qr_image_name: file.name,
+          decoded_url: response.data.url
+        });
+        toast.success('QR Code decoded successfully! Ready to scan.');
+      }
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { detail?: string } } };
+      const message = axiosError.response?.data?.detail || 'Failed to decode QR code. Ensure it contains a valid URL.';
+      toast.error(message);
+    } finally {
+      setIsUploadingQR(false);
+      // Ensure input loses focus if it had it
+      inputRef.current?.blur();
     }
   };
 
@@ -386,35 +455,6 @@ export default function DashboardPage() {
     return 'text-red-400 border-red-500/20 bg-red-500/10';
   };
 
-  // Card Skeleton Loaders
-  const CardSkeleton = () => (
-    <Card className="border-white/10 bg-black/40 backdrop-blur-xl animate-pulse">
-      <CardHeader className="pb-2">
-        <div className="h-4 w-24 bg-white/10 rounded" />
-      </CardHeader>
-      <CardContent>
-        <div className="h-8 w-16 bg-white/10 rounded mb-2" />
-        <div className="h-3 w-32 bg-white/10 rounded" />
-      </CardContent>
-    </Card>
-  );
-
-  // Chart Skeleton Loaders
-  const ChartSkeleton = () => (
-    <Card className="border-white/10 bg-black/40 backdrop-blur-xl animate-pulse h-[350px]">
-      <CardHeader>
-        <div className="h-5 w-40 bg-white/10 rounded mb-2" />
-        <div className="h-4 w-60 bg-white/10 rounded" />
-      </CardHeader>
-      <CardContent className="h-[220px] flex items-end justify-between gap-4 px-8 pb-4">
-        <div className="w-full bg-white/5 rounded-t h-[40%]" />
-        <div className="w-full bg-white/5 rounded-t h-[75%]" />
-        <div className="w-full bg-white/5 rounded-t h-[50%]" />
-        <div className="w-full bg-white/5 rounded-t h-[90%]" />
-      </CardContent>
-    </Card>
-  );
-
   // Compute guest stats on the fly — guard against empty arrays
   const computedOverview = isGuest ? {
     total_scans: guestHistory.length,
@@ -423,6 +463,8 @@ export default function DashboardPage() {
     dangerous_count: guestHistory.filter(s => s.status === 'DANGEROUS').length,
     ml_scan_count: guestHistory.filter(s => s.scan_type === 'ml' || s.scan_type === 'comparison').length,
     rule_based_count: guestHistory.filter(s => s.scan_type === 'rule-based' || s.scan_type === 'comparison').length,
+    manual_scan_count: guestHistory.filter(s => s.scan_source === 'manual' || !s.scan_source).length,
+    qr_scan_count: guestHistory.filter(s => s.scan_source === 'qr').length,
     average_threat_score: guestHistory.length > 0
       ? Math.round(guestHistory.reduce((acc, curr) => acc + (curr.score ?? 0), 0) / guestHistory.length)
       : 0,
@@ -691,17 +733,65 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-3 w-full">
-            <Input 
-              ref={inputRef}
-              placeholder="Enter suspicious link (e.g., http://login-verification-paypal.com)..." 
-              className="w-full sm:flex-1 bg-background/50 border-white/10 focus-visible:ring-emerald-500/50 h-12 text-sm font-mono"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={scanMutation.isPending}
-              aria-label="URL to scan"
-              maxLength={2048}
-            />
+            <div className="flex-1 relative flex items-center group">
+              <Input 
+                ref={inputRef}
+                placeholder="Enter suspicious link or drop a QR code..." 
+                className="w-full pr-12 bg-background/50 border-white/10 focus-visible:ring-emerald-500/50 h-12 text-sm font-mono"
+                value={url}
+                readOnly={scanSource === 'qr'}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setScanSource('manual');
+                  setScanMetadata({});
+                }}
+                onKeyDown={handleKeyDown}
+                disabled={scanMutation.isPending || isUploadingQR}
+                aria-label="URL to scan"
+                maxLength={2048}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    handleQRUpload(e.dataTransfer.files[0]);
+                  }
+                }}
+              />
+              <input
+                type="file"
+                accept="image/png, image/jpeg, image/webp"
+                className="hidden"
+                id="qr-upload"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleQRUpload(e.target.files[0]);
+                  }
+                  e.target.value = ''; // reset input
+                }}
+              />
+              {scanSource === 'qr' ? (
+                <button
+                  type="button"
+                  className="absolute right-3 p-1.5 rounded-md hover:bg-white/10 text-emerald-400 hover:text-red-400 transition-colors cursor-pointer"
+                  onClick={() => {
+                    setUrl('');
+                    setScanSource('manual');
+                    setScanMetadata({});
+                  }}
+                  title="Clear QR URL"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              ) : (
+                <label 
+                  htmlFor="qr-upload"
+                  className="absolute right-3 p-1.5 rounded-md hover:bg-white/10 text-muted-foreground hover:text-emerald-400 transition-colors cursor-pointer"
+                  title="Upload QR Code"
+                >
+                  {isUploadingQR ? <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> : <QrCode className="w-5 h-5" />}
+                </label>
+              )}
+            </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
               <select 
                 value={scanType}
@@ -805,7 +895,7 @@ export default function DashboardPage() {
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse mt-1 shrink-0" />
                   <span>
                     <span className="font-bold">Server is waking up.</span>
-                    {' '}Render's free tier spins down database processes after inactivity. Waking threat database container (usually 20–40 seconds). Hang tight.
+                    {' '}Render&apos;s free tier spins down database processes after inactivity. Waking threat database container (usually 20–40 seconds). Hang tight.
                   </span>
                 </div>
               )}
@@ -843,8 +933,10 @@ export default function DashboardPage() {
                 <div className="text-2xl font-bold tracking-tight font-mono text-foreground">
                   <AnimatedCounter value={activeOverview.total_scans} />
                 </div>
-                <div className="text-[10px] text-muted-foreground mt-1">
-                  {isGuest ? 'Temporary local memory' : 'Aggregated history'}
+                <div className="text-[10px] text-muted-foreground mt-1 flex gap-2">
+                  <span>Manual: {activeOverview.manual_scan_count || 0}</span>
+                  <span>|</span>
+                  <span>QR: {activeOverview.qr_scan_count || 0}</span>
                 </div>
               </CardContent>
             </Card>

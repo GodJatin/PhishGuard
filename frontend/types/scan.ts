@@ -1,5 +1,23 @@
 export interface ScanRequest {
   url: string;
+  scan_source?: string;
+  scan_metadata?: {
+    qr_image_name?: string;
+    decoded_url?: string;
+    domain_intelligence?: {
+      created_date: string;
+      domain_age_days: number;
+      registrar: string;
+    };
+    threat_feeds?: {
+      openphish_match: boolean;
+      phishtank_match: boolean;
+      urlhaus_match: boolean;
+      matched_sources: string[];
+      confidence: string;
+    };
+    [key: string]: string | number | boolean | string[] | Record<string, unknown> | null | undefined;
+  };
 }
 
 export interface TechnicalDetails {
@@ -74,6 +92,8 @@ export interface ScanResult {
   recommendation: string;
   timestamp: string;
   confidence?: number;
+  scan_source?: string;
+  scan_metadata?: any;
 }
 
 // Map the DB schema as well
@@ -85,7 +105,9 @@ export interface DBScan {
   status: string;
   score: number;
   reasons: string[];
-  technical_details: any;
+  technical_details: TechnicalDetails | Record<string, unknown>;
   recommendation: string;
   created_at: string;
+  scan_source?: string;
+  scan_metadata?: any;
 }

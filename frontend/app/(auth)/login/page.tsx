@@ -60,8 +60,9 @@ export default function LoginPage() {
       toast.success('Successfully logged in');
       router.push('/dashboard');
       router.refresh();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to login. Please check your credentials.');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to login. Please check your credentials.';
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }
@@ -162,7 +163,7 @@ export default function LoginPage() {
           </CardContent>
           <CardFooter className="flex flex-col gap-4 text-center border-t border-white/10 pt-6">
             <div className="text-sm text-muted-foreground">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <Link href="/signup" className="text-emerald-400 hover:text-emerald-300 font-medium font-mono">
                 Sign up
               </Link>

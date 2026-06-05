@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, ShieldCheck, Loader2 } from 'lucide-react';
-import Logo from '../logo';
+
 
 interface SplashScreenProps {
   onComplete?: () => void;

@@ -1,6 +1,6 @@
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
@@ -130,6 +130,14 @@ def generate_pdf_report(scan: dict) -> bytes:
         except Exception:
             tech = {}
             
+    meta = scan.get("scan_metadata", {})
+    if isinstance(meta, str):
+        import json
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
+            
     # Status colors
     if status == 'SAFE':
         status_color = colors.HexColor('#10B981')  # Emerald Green
@@ -137,6 +145,9 @@ def generate_pdf_report(scan: dict) -> bytes:
     elif status == 'SUSPICIOUS':
         status_color = colors.HexColor('#F59E0B')  # Amber Yellow
         status_bg = colors.HexColor('#FEF3C7')
+    elif status == 'HIGH RISK':
+        status_color = colors.HexColor('#F97316')  # Orange
+        status_bg = colors.HexColor('#FFEDD5')
     else:
         status_color = colors.HexColor('#EF4444')  # Rose Red
         status_bg = colors.HexColor('#FEE2E2')
@@ -186,479 +197,307 @@ def generate_pdf_report(scan: dict) -> bytes:
     
     # Title
     story.append(Paragraph("Detailed Threat Analysis Report", title_style))
-    story.append(Spacer(1, 2))
+    story.append(Spacer(1, 5))
     
-    # 2. Scanned URL Widget
-    wrapped_url = _format_url_for_wrap(scan.get('url') or scan.get('scanned_url', ''))
-    url_content_style = ParagraphStyle(
-        'UrlContent',
-        parent=styles['Normal'],
-        fontName='Courier',
-        fontSize=9,
-        leading=12,
-        textColor=colors.HexColor('#1E293B')
-    )
+    # Fetch variables for all blocks
+    meta = scan.get("scan_metadata", {}) or {}
+    decision = meta.get("decision_snapshot", {}) or {}
     
-    url_data = [
-        [Paragraph("<b>Target URL:</b>", ParagraphStyle('UrlLbl', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor('#475569')))],
-        [Paragraph(wrapped_url, url_content_style)]
-    ]
-    url_table = Table(url_data, colWidths=[7*inch])
-    url_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
-        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#E2E8F0')),
-        ('PADDING', (0,0), (-1,-1), 8),
-        ('ROUNDEDCORNERS', [4, 4, 4, 4]),
-    ]))
-    story.append(url_table)
-    story.append(Spacer(1, 10))
-    
-    # Check if this is a comparison report
-    if scan_type == "comparison":
-        rule_res = tech.get("rule_based_result", {})
-        ml_res = tech.get("ml_result", {})
+    pres_verdict = decision.get("final_verdict") or scan.get("status", "SAFE")
+    pres_finding = tech.get("threat_category", "Generic Phishing Attempt")
+    pres_root_cause = decision.get("root_cause", "No specific intelligence trigger activated.")
+    pres_escalation = decision.get("escalation_trigger", "None")
+    pres_conf = decision.get("confidence", "Unknown")
+    pres_cons = decision.get("consensus", "Unknown")
+    pres_action = scan.get("recommendation", "Exercise normal caution.")
+
+    def create_section_header(title):
+        return Paragraph(title, section_title_style)
         
-        score_lbl_style = ParagraphStyle(
-            'ScoreLblComp',
-            parent=styles['Normal'],
-            alignment=1,
-            fontName='Helvetica-Bold',
-            fontSize=9,
-            textColor=colors.HexColor('#475569')
-        )
-        score_val_style = ParagraphStyle(
-            'ScoreValComp',
-            parent=styles['Normal'],
-            alignment=1,
-            fontName='Helvetica-Bold',
-            fontSize=22,
-            textColor=colors.HexColor('#0F172A'),
-            leading=26
-        )
-        
-        rule_status = rule_res.get("status", "SAFE").upper()
-        ml_status = ml_res.get("status", "SAFE").upper()
-        
-        def get_status_hex(s):
-            if s == 'SAFE': return '#10B981'
-            if s == 'SUSPICIOUS': return '#F59E0B'
-            return '#EF4444'
-            
-        rule_color = colors.HexColor(get_status_hex(rule_status))
-        ml_color = colors.HexColor(get_status_hex(ml_status))
-        
-        score_data = [
-            [
-                [
-                    Paragraph("RULE-BASED SCAN SCORE", score_lbl_style),
-                    Paragraph(f"{rule_res.get('score', 0)}<font size=11 color='#64748B'>/100</font>", score_val_style),
-                    Paragraph(f"<b>STATUS: {rule_status}</b>", ParagraphStyle('RStat', parent=score_lbl_style, alignment=1, textColor=rule_color))
-                ],
-                [
-                    Paragraph("ML DETECTION ENGINE SCORE", score_lbl_style),
-                    Paragraph(f"{ml_res.get('score', 0)}<font size=11 color='#64748B'>/100</font>", score_val_style),
-                    Paragraph(f"<b>STATUS: {ml_status}</b><br/><font size=8 color='#64748B'>Confidence: {float(ml_res.get('confidence', 0))*100:.1f}%</font>", ParagraphStyle('MStat', parent=score_lbl_style, alignment=1, textColor=ml_color))
-                ]
-            ]
-        ]
-        score_table = Table(score_data, colWidths=[3.5*inch, 3.5*inch])
-        score_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
-            ('BACKGROUND', (1,0), (1,0), colors.HexColor('#F8FAFC')),
-            ('BOX', (0,0), (0,0), 1.2, rule_color),
-            ('BOX', (1,0), (1,0), 1.2, ml_color),
-            ('PADDING', (0,0), (-1,-1), 10),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-        story.append(score_table)
-        story.append(Spacer(1, 10))
-        
-        # Engine Findings Comparison Table
-        story.append(Paragraph("Comparison of Findings", section_title_style))
-        
-        rule_reasons = rule_res.get("reasons", [])
-        ml_reasons = ml_res.get("reasons", [])
-        
-        rule_p_list = [Paragraph("<b>Rule-Based Detections:</b>", ParagraphStyle('RLbl', parent=body_style, fontName='Helvetica-Bold'))]
-        if rule_reasons:
-            for r in rule_reasons:
-                rule_p_list.append(Paragraph(f"<font color='{rule_color.hexval()}'><b>•</b></font> {safe_xml_escape(r)}", body_style))
-        else:
-            rule_p_list.append(Paragraph("No rule violations triggered.", body_style))
-            
-        ml_p_list = [Paragraph("<b>ML Anomaly Findings:</b>", ParagraphStyle('MLbl', parent=body_style, fontName='Helvetica-Bold'))]
-        if ml_reasons:
-            for r in ml_reasons:
-                ml_p_list.append(Paragraph(f"<font color='{ml_color.hexval()}'><b>•</b></font> {safe_xml_escape(r)}", body_style))
-        else:
-            ml_p_list.append(Paragraph("No model anomalies identified.", body_style))
-            
-        findings_data = [[rule_p_list, ml_p_list]]
-        findings_table = Table(findings_data, colWidths=[3.5*inch, 3.5*inch])
-        findings_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
-            ('PADDING', (0,0), (-1,-1), 8),
+    def create_table_from_dict(data_dict, col_widths=[2.0*inch, 5.0*inch]):
+        rows = []
+        for k, v in data_dict.items():
+            rows.append([Paragraph(f"<b>{k}</b>", body_style), Paragraph(safe_xml_escape(str(v)), body_style)])
+        t = Table(rows, colWidths=col_widths)
+        t.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FAFAFA')),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
         ]))
-        story.append(findings_table)
-        story.append(Spacer(1, 10))
-        
-        # Unified Threat Assessment details
-        story.append(Paragraph("Unified Threat Assessment Summary", section_title_style))
-        shared_inds = tech.get("shared_indicators", [])
-        unique_rules = tech.get("unique_findings", {}).get("rule_based", [])
-        unique_ml = tech.get("unique_findings", {}).get("ml", [])
-        
-        assessment_rows = [
-            [
-                Paragraph("<b>Primary Category:</b>", body_style),
-                Paragraph(f"<b>{tech.get('threat_category', 'N/A')}</b>", body_style)
-            ],
-            [
-                Paragraph("<b>Severity Tier:</b>", body_style),
-                Paragraph(f"<b>{tech.get('severity_tier', 'N/A')}</b>", body_style)
-            ],
-            [
-                Paragraph("<b>Consensus Rating:</b>", body_style),
-                Paragraph(f"<b>{tech.get('consensus_level', 'N/A')}</b>", body_style)
-            ]
-        ]
-        if shared_inds:
-            assessment_rows.append([
-                Paragraph("<b>Shared Indicators:</b>", body_style),
-                Paragraph(", ".join(shared_inds), body_style)
-            ])
-        if unique_rules:
-            assessment_rows.append([
-                Paragraph("<b>Unique Heuristics:</b>", body_style),
-                Paragraph(", ".join(unique_rules), body_style)
-            ])
-        if unique_ml:
-            assessment_rows.append([
-                Paragraph("<b>Unique ML Features:</b>", body_style),
-                Paragraph(", ".join(unique_ml), body_style)
-            ])
-        assessment_rows.append([
-            Paragraph("<b>Threat Score Difference:</b>", body_style),
-            Paragraph(f"{tech.get('score_difference', 0)} points difference between engines", body_style)
-        ])
+        return t
 
-        
-        assessment_table = Table(assessment_rows, colWidths=[2.2*inch, 4.8*inch])
-        assessment_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
-            ('PADDING', (0,0), (-1,-1), 5),
-            ('BACKGROUND', (0,0), (0,-1), colors.HexColor('#F8FAFC')),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-        story.append(assessment_table)
-        story.append(Spacer(1, 10))
-        
-    else:
-        # Standard Scan layout
-        confidence_val = tech.get("confidence")
-        
-        # Typography and formatting
-        score_lbl_style = ParagraphStyle(
-            'ScoreLbl',
-            parent=styles['Normal'],
-            alignment=1,
-            fontName='Helvetica-Bold',
-            fontSize=9,
-            textColor=colors.HexColor('#475569'),
-            spaceAfter=4
-        )
-        score_style = ParagraphStyle(
-            'ScoreVal',
-            parent=styles['Normal'],
-            alignment=1,
-            fontName='Helvetica-Bold',
-            fontSize=28,
-            textColor=colors.HexColor('#0F172A'),
-            leading=32
-        )
-        status_val_style = ParagraphStyle(
-            'StatusVal',
-            parent=styles['Normal'],
-            alignment=1,
-            fontName='Helvetica-Bold',
-            fontSize=18,
-            textColor=status_color,
-            leading=22
-        )
-        status_lbl_style = ParagraphStyle(
-            'StatusLbl', parent=score_lbl_style
-        )
-        
-        category_val = tech.get("threat_category", "Generic Phishing Attempt")
-        severity_tier_val = tech.get("severity_tier", "Informational")
-        consensus_val = tech.get("consensus_level", "Moderate Confidence")
-        
-        col_widths = [2.33*inch, 2.33*inch, 2.33*inch]
-        
-        # Build first column text (includes confidence if present)
-        col1_content = [
-            Paragraph("THREAT INDEX SCORE", score_lbl_style),
-            Paragraph(f"{score}<font size=14 color='#64748B'>/100</font>", score_style)
-        ]
-        if confidence_val is not None:
-            col1_content.append(Paragraph(f"<font size=8 color='#06B6D4'><b>Model Conf: {float(confidence_val)*100:.1f}%</b></font>", score_lbl_style))
-            
-        col2_content = [
-            Paragraph("SEVERITY TIER / STATUS", status_lbl_style),
-            Paragraph(severity_tier_val, status_val_style),
-            Paragraph(f"<font size=8 color='#64748B'>Index Class: {status}</font>", score_lbl_style)
-        ]
-        
-        col3_content = [
-            Paragraph("PRIMARY CATEGORY / CONSENSUS", score_lbl_style),
-            Paragraph(f"<b>{category_val}</b>", ParagraphStyle('CatStyle', parent=score_lbl_style, alignment=1, fontSize=9, leading=11, textColor=colors.HexColor('#0F172A'))),
-            Paragraph(f"<font size=8 color='#64748B'>Rating: {consensus_val}</font>", score_lbl_style)
-        ]
-        
-        score_status_data = [[col1_content, col2_content, col3_content]]
-        score_status_table = Table(score_status_data, colWidths=col_widths)
-        score_status_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (0,0), colors.HexColor('#F8FAFC')),
-            ('BACKGROUND', (1,0), (1,0), status_bg),
-            ('BACKGROUND', (2,0), (2,0), colors.HexColor('#ECFEFF')),
-            ('BOX', (0,0), (0,0), 1, colors.HexColor('#E2E8F0')),
-            ('BOX', (1,0), (1,0), 1, status_color),
-            ('BOX', (2,0), (2,0), 1, colors.HexColor('#A5F3FC')),
-            ('PADDING', (0,0), (-1,-1), 12),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-        story.append(score_status_table)
-        story.append(Spacer(1, 10))
-        
-        # Findings List
-        story.append(Paragraph("Analysis Findings", section_title_style))
-        reasons = scan.get("reasons", [])
-        if reasons:
-            reasons_list = []
-            for r in reasons:
-                escaped_r = safe_xml_escape(r)
-                reasons_list.append([Paragraph(f"<font color='{status_color.hexval()}'><b>•</b></font> {escaped_r}", body_style)])
-            reasons_table = Table(reasons_list, colWidths=[7*inch])
-            reasons_table.setStyle(TableStyle([
-                ('PADDING', (0,0), (-1,-1), 3),
-                ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ]))
-            story.append(reasons_table)
-        else:
-            story.append(Paragraph("No suspicious features or threat indicators were triggered. The URL passed all rule matches.", body_style))
-        story.append(Spacer(1, 10))
+    # 1. Investigation Metadata (Refinement 3)
+    scan_source = str(scan.get('scan_source', 'manual')).upper()
+    source_str = "QR Code" if scan_source == "QR" else "Manual URL"
+    story.append(create_section_header("Investigation Metadata"))
+    meta_dict = {
+        "Scan ID:": scan.get('id', 'Unknown'),
+        "Scan Timestamp:": scan.get('created_at', 'Unknown'),
+        "Engine Mode:": scan.get('scan_type', 'rule-based').capitalize(),
+        "Input Source:": source_str,
+        "Report Version:": "PhishGuard Intelligence Report v1.0"
+    }
+    story.append(create_table_from_dict(meta_dict))
+    story.append(Spacer(1, 10))
 
-    # Explainable Scoring Breakdown (common to standard scans that have it)
-    scoring_breakdown = tech.get("scoring_breakdown")
-    if scoring_breakdown:
-        story.append(Paragraph("Explainable Scoring Breakdown", section_title_style))
-        breakdown_rows = []
-        for b in scoring_breakdown:
-            rule_name = b.get("rule", "Threat indicator triggered")
-            pts = b.get("points", 0)
-            sign = "+" if pts >= 0 else ""
-            
-            p_style = ParagraphStyle('PtsVal', parent=body_style, alignment=2, fontName='Helvetica-Bold')
-            if pts > 0:
-                p_style.textColor = colors.HexColor('#EF4444')
-            else:
-                p_style.textColor = colors.HexColor('#10B981')
-                
-            breakdown_rows.append([
-                Paragraph(f"• {rule_name}", body_style),
-                Paragraph(f"{sign}{pts} points", p_style)
-            ])
-        breakdown_table = Table(breakdown_rows, colWidths=[5.4*inch, 1.6*inch])
-        breakdown_table.setStyle(TableStyle([
-            ('PADDING', (0,0), (-1,-1), 4),
-            ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-        story.append(breakdown_table)
-        story.append(Spacer(1, 10))
-
-    # Phase 10: Educational Insight Box
-    insight_text = tech.get("educational_insight")
-    if insight_text:
-        story.append(Paragraph("Why This Matters (Security Context)", section_title_style))
-        insight_data = [
-            [Paragraph("Educational Threat Insight:", ParagraphStyle('InsightTitle', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.HexColor('#059669')))],
-            [Paragraph(safe_xml_escape(insight_text), ParagraphStyle('InsightContent', parent=body_style, fontSize=9, leading=13, textColor=colors.HexColor('#1E293B')))]
-        ]
-        insight_table = Table(insight_data, colWidths=[7*inch])
-        insight_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#ECFDF5')),
-            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#A7F3D0')),
-            ('PADDING', (0,0), (-1,-1), 8),
-            ('ROUNDEDCORNERS', [4, 4, 4, 4]),
-        ]))
-        story.append(insight_table)
-        story.append(Spacer(1, 10))
-
-    # Phase 10: Scan Journey Timeline
-    journey = tech.get("scan_journey")
-    if journey:
-        story.append(Paragraph("Analyst Scan Journey Timeline", section_title_style))
-        journey_rows = []
-        for stage in journey:
-            stage_name = stage.get("stage", "")
-            stage_status = stage.get("status", "passed").upper()
-            msg = stage.get("message", "")
-            
-            # Map status to color and symbol
-            if stage_status == "PASSED":
-                symbol = "[PASS]"
-                color_hex = "#10B981"
-            elif stage_status == "TRIGGERED":
-                symbol = "[ALERT]"
-                color_hex = "#EF4444"
-            elif stage_status == "WARNING":
-                symbol = "[WARN]"
-                color_hex = "#F59E0B"
-            elif stage_status == "CRITICAL":
-                symbol = "[CRIT]"
-                color_hex = "#B91C1C"
-            else:
-                symbol = "[INFO]"
-                color_hex = "#64748B"
-                
-            status_style = ParagraphStyle(
-                'JStatus',
-                parent=body_style,
-                fontName='Helvetica-Bold',
-                textColor=colors.HexColor(color_hex),
-                fontSize=8
-            )
-            journey_rows.append([
-                Paragraph(stage_name, ParagraphStyle('JStage', parent=body_style, fontName='Helvetica-Bold')),
-                Paragraph(symbol, status_style),
-                Paragraph(safe_xml_escape(msg), ParagraphStyle('JMsg', parent=body_style, fontSize=8.5, leading=11))
-            ])
-            
-        journey_table = Table(journey_rows, colWidths=[2.2*inch, 0.8*inch, 4.0*inch])
-        journey_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
-            ('PADDING', (0,0), (-1,-1), 5),
-            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FAFAFA')),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-        story.append(journey_table)
-        story.append(Spacer(1, 10))
-
-    # 3. Technical Details Grid
-    story.append(Paragraph("Technical Parameters Audit", section_title_style))
-
-    
-    # Escape and format domain for wrapping
-    domain_val = tech.get("domain", "N/A")
-    domain_wrapped = _format_url_for_wrap(domain_val)
-            
-    tech_grid_data = [
+    # 2. Visual Severity Banner (Phase 6)
+    banner_data = [
         [
-            Paragraph("<b>Target Domain:</b>", body_style),
-            Paragraph(domain_wrapped, mono_style),
-            Paragraph("<b>HTTPS Secured:</b>", body_style),
-            Paragraph("Yes" if tech.get("https") else "No (Insecure)", ParagraphStyle('HttpsCol', parent=body_style, fontName='Helvetica-Bold', textColor=colors.HexColor('#10B981') if tech.get("https") else colors.HexColor('#EF4444')))
-        ],
-        [
-            Paragraph("<b>URL Length:</b>", body_style),
-            Paragraph(f"{tech.get('url_length', 0)} characters", body_style),
-            Paragraph("<b>Subdomains:</b>", body_style),
-            Paragraph(str(tech.get("subdomain_count", 0)), body_style)
-        ],
-        [
-            Paragraph("<b>Contains IP Host:</b>", body_style),
-            Paragraph("Yes (Suspicious)" if tech.get("contains_ip") else "No", body_style),
-            Paragraph("<b>Suspicious TLD:</b>", body_style),
-            Paragraph("Yes (High-risk)" if tech.get("suspicious_tld") else "No", body_style)
+            Paragraph(f"<font color='#FFFFFF' size=14><b>{pres_verdict}</b></font>", body_style),
+            Paragraph(f"<font color='#FFFFFF'>Category: {safe_xml_escape(pres_finding)} | Confidence: {safe_xml_escape(pres_conf)}</font>", body_style)
         ]
     ]
-    
-    if tech.get("path_depth") is not None or tech.get("query_parameter_count") is not None or tech.get("entropy_score") is not None:
-        path_val = str(tech.get("path_depth", 0))
-        query_val = str(tech.get("query_parameter_count", 0))
-        entropy_val = f"{float(tech.get('entropy_score', 0.0)):.3f}"
-        
-        tech_grid_data.append([
-            Paragraph("<b>Path Depth:</b>", body_style),
-            Paragraph(path_val, body_style),
-            Paragraph("<b>Query Parameters:</b>", body_style),
-            Paragraph(query_val, body_style)
-        ])
-        tech_grid_data.append([
-            Paragraph("<b>URL Entropy:</b>", body_style),
-            Paragraph(entropy_val, body_style),
-            Paragraph("<b>Redirect Pattern:</b>", body_style),
-            Paragraph("Flagged" if tech.get("redirect_pattern_detected") else "Clean", body_style)
-        ])
-    else:
-        tech_grid_data.append([
-            Paragraph("<b>Redirect Pattern:</b>", body_style),
-            Paragraph("Flagged" if tech.get("redirect_pattern_detected") else "Clean", body_style),
-            Paragraph("", body_style),
-            Paragraph("", body_style)
-        ])
-        
-    tech_table = Table(tech_grid_data, colWidths=[1.8*inch, 1.7*inch, 1.8*inch, 1.7*inch])
-    tech_table.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
-        ('BACKGROUND', (0,0), (0,-1), colors.HexColor('#F8FAFC')),
-        ('BACKGROUND', (2,0), (2,-1), colors.HexColor('#F8FAFC')),
-        ('PADDING', (0,0), (-1,-1), 5),
+    t_banner = Table(banner_data, colWidths=[2.5*inch, 4.5*inch])
+    t_banner.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), status_color),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 8),
     ]))
-    story.append(tech_table)
+    story.append(t_banner)
+    story.append(Spacer(1, 15))
+
+    # 3. EXECUTIVE SUMMARY
+    story.append(create_section_header("1. Executive Summary"))
+    exec_data = [
+        [Paragraph("<b>Threat Level:</b>", body_style), Paragraph(f"<font color='{status_color.hexval()}'><b>{pres_verdict}</b></font>", body_style)],
+        [Paragraph("<b>Primary Finding:</b>", body_style), Paragraph(safe_xml_escape(pres_finding), body_style)],
+        [Paragraph("<b>Root Cause:</b>", body_style), Paragraph(safe_xml_escape(pres_root_cause), body_style)],
+        [Paragraph("<b>Escalation Trigger:</b>", body_style), Paragraph(safe_xml_escape(pres_escalation), body_style)],
+        [Paragraph("<b>Confidence:</b>", body_style), Paragraph(safe_xml_escape(pres_conf), body_style)],
+        [Paragraph("<b>Consensus:</b>", body_style), Paragraph(safe_xml_escape(pres_cons), body_style)]
+    ]
+    t_exec = Table(exec_data, colWidths=[2.0*inch, 5.0*inch])
+    t_exec.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t_exec)
     story.append(Spacer(1, 10))
     
-    # 4. Recommendation Box
-    rec_title_style = ParagraphStyle(
-        'RecTitle',
-        parent=styles['Normal'],
-        fontSize=10,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#334155'),
-        spaceAfter=3
-    )
-    rec_content_style = ParagraphStyle(
-        'RecContent',
-        parent=body_style,
-        fontSize=9,
-        leading=13,
-        textColor=colors.HexColor('#334155')
-    )
+    # 4. DECISION SNAPSHOT
+    story.append(create_section_header("2. Decision Snapshot"))
+    story.append(create_table_from_dict({
+        "Final Verdict:": pres_verdict,
+        "Root Cause:": pres_root_cause,
+        "Escalation Trigger:": pres_escalation,
+        "Confidence:": pres_conf,
+        "Consensus:": pres_cons
+    }))
+    story.append(Spacer(1, 10))
+
+    # 5. SUPPORTING EVIDENCE
+    story.append(create_section_header("3. Supporting Evidence"))
+    evidence = meta.get("supporting_evidence", [])
+    if evidence:
+        for ev in evidence:
+            story.append(Paragraph(f"<font color='#10B981'>✓</font> {safe_xml_escape(ev)}", body_style))
+    else:
+        story.append(Paragraph("No supporting evidence explicitly stored.", body_style))
+    story.append(Spacer(1, 10))
     
-    rec_text = scan.get("recommendation", "No specific recommendation generated.")
-    rec_escaped = safe_xml_escape(rec_text)
-    rec_data = [
-        [Paragraph("Security Recommendation:", rec_title_style)],
-        [Paragraph(rec_escaped, rec_content_style)]
-    ]
-    rec_table = Table(rec_data, colWidths=[7*inch])
-    rec_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')), 
-        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#E2E8F0')),
-        ('PADDING', (0,0), (-1,-1), 8),
-        ('ROUNDEDCORNERS', [4, 4, 4, 4]),
-    ]))
-    story.append(rec_table)
+    # Force PageBreak to move analysis logic to Page 2
+    story.append(PageBreak())
+    
+    # 6. THREAT INTELLIGENCE ANALYSIS
+    story.append(Paragraph("Intelligence Findings", ParagraphStyle('IntFind', parent=title_style, fontSize=16)))
+    story.append(create_section_header("4. Threat Intelligence Analysis"))
+    tf = meta.get("threat_feeds", {})
+    matched = tf.get("matched_sources", []) if tf else []
+    
+    def get_tf_color(name):
+        return "<font color='#EF4444'>MATCH</font>" if name in matched else "No Match"
+        
+    story.append(create_table_from_dict({
+        "OpenPhish:": get_tf_color('OpenPhish'),
+        "PhishTank:": get_tf_color('PhishTank'),
+        "URLHaus:": get_tf_color('URLHaus')
+    }))
+    story.append(Spacer(1, 10))
+
+    # 7. DOMAIN INTELLIGENCE ANALYSIS
+    story.append(create_section_header("5. Domain Intelligence Analysis"))
+    domain_intel = meta.get("domain_intelligence", {})
+    di_status = domain_intel.get("status", "success")
+    interpretation_text = ""
+    if di_status == "unregistered":
+        di_dict = {
+            "Registrar:": "Unknown",
+            "Created Date:": "Not Registered",
+            "Domain Age:": "N/A",
+            "Risk Signal:": "<font color='#EF4444'>High</font>",
+            "Status:": "Unregistered Domain Detected"
+        }
+        interpretation_text = "Domain registration information could not be verified through RDAP/WHOIS sources. This does not confirm malicious activity, but limits confidence in registration-age assessment."
+    elif di_status == "failed":
+        di_dict = {
+            "Registrar:": "Unavailable",
+            "Created Date:": "Lookup Failed",
+            "Domain Age:": "Unknown",
+            "Risk Signal:": "Unknown",
+            "Status:": "Lookup Failure"
+        }
+        interpretation_text = "Domain registration information could not be verified through RDAP/WHOIS sources. This does not confirm malicious activity, but limits confidence in registration-age assessment."
+    else:
+        age = domain_intel.get('domain_age_days')
+        risk_signal = "Low"
+        rs_color = "#10B981"
+        if age is not None:
+            if age <= 30:
+                risk_signal = "High"
+                rs_color = "#EF4444"
+                interpretation_text = "This domain was registered recently. Threat actors frequently utilize newly registered infrastructure to bypass historic reputation filters."
+            elif age <= 90:
+                risk_signal = "Medium"
+                rs_color = "#F59E0B"
+            else:
+                interpretation_text = "The domain exhibits a mature registration history, which generally lowers the risk of it being a disposable phishing asset."
+                
+        di_dict = {
+            "Registrar:": domain_intel.get('registrar', 'Unknown'),
+            "Created Date:": domain_intel.get('created_date', 'Unknown'),
+            "Domain Age:": f"{age if age is not None else 'Unknown'} Days",
+            "Risk Signal:": f"<font color='{rs_color}'>{risk_signal}</font>",
+            "Status:": "Known Domain"
+        }
+    story.append(create_table_from_dict(di_dict))
+    if interpretation_text:
+        story.append(Spacer(1, 5))
+        story.append(Paragraph(f"<b>Interpretation:</b> {safe_xml_escape(interpretation_text)}", body_style))
+    story.append(Spacer(1, 10))
+
+    # 8. BRAND SPOOF ANALYSIS
+    story.append(create_section_header("6. Brand Spoof Analysis"))
+    spoofed = tech.get("brand_spoof_detected", False)
+    if spoofed:
+        bs_dict = {
+            "Impersonated Brand:": tech.get('suspected_brand', 'Unknown'),
+            "Spoof Type:": tech.get('spoof_type', 'Unknown'),
+            "Detection Method:": "Trademark Similarity Analysis",
+            "Risk Assessment:": "<font color='#EF4444'>High</font>",
+            "Reason:": tech.get('spoof_explanation', 'Potential impersonation detected.')
+        }
+    else:
+        bs_dict = {
+            "Status:": "No Brand Impersonation Detected",
+            "Detection Method:": "Trademark Similarity Analysis",
+            "Risk Assessment:": "<font color='#10B981'>Low</font>"
+        }
+    story.append(create_table_from_dict(bs_dict))
+    story.append(Spacer(1, 10))
+
+    # 9. INVESTIGATION TIMELINE
+    story.append(create_section_header("7. Investigation Timeline"))
+    journey = tech.get("scan_journey", [])
+    if journey:
+        j_data = []
+        for step in journey:
+            st = step.get("status", "informational")
+            st_text = st.capitalize()
+            if st == "passed": 
+                icon = "<font color='#10B981'>✓</font>"
+            elif st == "triggered" or st == "escalated": 
+                icon = "<font color='#EF4444'>⚠</font>"
+            else: 
+                icon = "<font color='#3B82F6'>ℹ</font>"
+            
+            j_data.append([
+                Paragraph(f"<b>{safe_xml_escape(step.get('stage', 'Analysis Step'))}</b>", body_style),
+                Paragraph(f"{icon} {st_text} - {safe_xml_escape(step.get('message', ''))}", body_style)
+            ])
+        t_journey = Table(j_data, colWidths=[2.0*inch, 5.0*inch])
+        t_journey.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+            ('LINEBELOW', (0,0), (-1,-2), 0.5, colors.HexColor('#F1F5F9'))
+        ]))
+        story.append(t_journey)
+    else:
+        story.append(Paragraph("Timeline data not available.", body_style))
+    story.append(Spacer(1, 10))
+    
+    # 10. TECHNICAL NOTES
+    story.append(create_section_header("8. Technical Notes"))
+    tech_notes_lines = meta.get("technical_notes", "No additional engine analysis available.").split(". ")
+    for line in tech_notes_lines:
+        line = line.strip()
+        if line:
+            if not line.endswith("."): line += "."
+            story.append(Paragraph(safe_xml_escape(line), body_style))
+    story.append(Spacer(1, 10))
+    
+    # Force PageBreak
+    story.append(PageBreak())
+
+    # 11. RECOMMENDATIONS
+    story.append(Paragraph("Analyst Conclusions", ParagraphStyle('IntFind2', parent=title_style, fontSize=16)))
+    story.append(create_section_header("9. Recommendations"))
+    recommendation_lines = scan.get("recommendation", "Exercise caution when interacting with this domain.").split(". ")
+    for line in recommendation_lines:
+        line = line.strip()
+        if line:
+            if not line.endswith("."): line += "."
+            story.append(Paragraph(safe_xml_escape(line), body_style))
     story.append(Spacer(1, 15))
+
+    # 12. EXECUTIVE CONCLUSION (Phase 3 & Refinement 2)
+    story.append(create_section_header("10. Executive Conclusion"))
+    # Generate Narrative
+    conclusion_p1 = f"PhishGuard classified this domain as {pres_verdict}."
     
-    # 5. Footer
-    footer_style = ParagraphStyle(
-        'FooterText',
-        parent=styles['Normal'],
-        alignment=1, # Center
-        fontName='Helvetica-Bold',
-        fontSize=8,
-        textColor=colors.HexColor('#94A3B8')
-    )
-    story.append(Paragraph("Generated by PhishGuard Threat Intelligence Engine", footer_style))
+    target_str = ""
+    if spoofed and tech.get('suspected_brand'):
+        target_str = f" targeting {tech.get('suspected_brand')}."
+    elif pres_finding != "Generic Phishing Attempt":
+        target_str = "."
+    conclusion_p2 = f"The domain exhibits characteristics consistent with {pres_finding}{target_str}"
     
+    tf_matched = bool(matched)
+    if tf_matched:
+        conclusion_p3 = f"Threat intelligence feed matches were identified, verifying the domain's status as a known malicious indicator."
+    else:
+        conclusion_p3 = f"No threat intelligence feed matches were identified at the time of analysis. However, brand spoof indicators and heuristic analysis provided sufficient evidence to classify the domain as a likely phishing candidate."
+        
+    conclusion_p4 = pres_action.split(". ")[0] + ("." if not pres_action.split(". ")[0].endswith(".") else "")
+
+    story.append(Paragraph(safe_xml_escape(conclusion_p1), body_style))
+    story.append(Paragraph(safe_xml_escape(conclusion_p2), body_style))
+    story.append(Paragraph(safe_xml_escape(conclusion_p3), body_style))
+    story.append(Paragraph(safe_xml_escape(conclusion_p4), body_style))
+    story.append(Spacer(1, 15))
+
+    # 13. EVIDENCE SNAPSHOT (Refinement 1)
+    story.append(create_section_header("11. Evidence Snapshot"))
+    evidence_snapshot = meta.get("evidence_snapshot", {})
+    if evidence_snapshot:
+        story.append(create_table_from_dict(evidence_snapshot))
+    else:
+        # Generate from stored intelligence but use strict fallback for missing numeric scores
+        gen_snapshot = {}
+        gen_snapshot["Brand Spoof:"] = "Detected" if spoofed else "No Match"
+        gen_snapshot["Threat Feed:"] = "Match Found" if tf_matched else "No Match"
+        gen_snapshot["Domain Status:"] = di_status.capitalize()
+        gen_snapshot["Threat Category:"] = pres_finding
+        gen_snapshot["Rule Engine Score:"] = "Not Available in Historical Record"
+        gen_snapshot["ML Engine Score:"] = "Not Available in Historical Record"
+        
+        # If it was a recent scan, rule_score/ml_score might be in technical_details
+        if "combined_score" in tech:
+            gen_snapshot["Rule Engine Score:"] = tech["combined_score"]
+        if "ml_confidence" in tech:
+            gen_snapshot["ML Engine Score:"] = tech["ml_confidence"]
+            
+        story.append(create_table_from_dict(gen_snapshot))
+        
+    story.append(Spacer(1, 15))
+
+    # Phase 6.5 Threat Feed Appendix
+    try:
+        cache_count = int(tf.get("cache_count", 0) if tf.get("cache_count") is not None else 0)
+    except ValueError:
+        cache_count = 0
+
+    if isinstance(tf, dict) and cache_count > 0:
+        story.append(Paragraph("Appendix: Threat Intelligence Health Diagnostics", ParagraphStyle('Diag', parent=body_style, fontSize=7, textColor=colors.HexColor('#94A3B8'))))
+        story.append(Paragraph(f"Feed Entries Available: {cache_count} | Last Sync: {tf.get('last_sync', 'Unknown')}", ParagraphStyle('Diag2', parent=body_style, fontSize=7, textColor=colors.HexColor('#94A3B8'))))
+
     doc.build(story, onFirstPage=draw_background, onLaterPages=draw_background)
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-    return pdf_bytes
+    return buffer.getvalue()

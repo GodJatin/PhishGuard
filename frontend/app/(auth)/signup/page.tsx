@@ -72,11 +72,12 @@ export default function SignupPage() {
         toast.success('Account created. Please check your email to verify.');
         router.push('/login');
       }
-    } catch (error: any) {
-      if (error.message.includes('already registered')) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : '';
+      if (msg.includes('already registered')) {
         toast.error('An account with this email already exists.');
       } else {
-        toast.error(error.message || 'Failed to sign up. Please try again.');
+        toast.error(msg || 'Failed to sign up. Please try again.');
       }
     } finally {
       setIsLoading(false);

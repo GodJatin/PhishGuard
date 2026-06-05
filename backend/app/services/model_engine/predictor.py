@@ -357,8 +357,15 @@ def predict_url(url: str) -> Tuple[str, int, float, Dict[str, Any], List[str], s
         "url_length": int(feats.get("url_length", 0))
     }
     
+    # Define a baseline severity_tier from the ML score (will be overridden by evaluate_final_verdict)
+    if score <= 20: severity_tier = "Informational"
+    elif score <= 40: severity_tier = "Low"
+    elif score <= 60: severity_tier = "Medium"
+    elif score <= 80: severity_tier = "High"
+    else: severity_tier = "Critical"
+
     recommendation = recommendation_engine.generate_recommendation(
-        status=status,
+        final_verdict=severity_tier,
         score=score,
         reasons=reasons,
         technical_details=tech_details_comp

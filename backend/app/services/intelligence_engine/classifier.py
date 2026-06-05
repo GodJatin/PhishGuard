@@ -58,6 +58,9 @@ def determine_category_and_tags(score: int, details: dict, reasons: List[str]) -
     # 8. Admin Panel Abuse Flags
     is_admin_abuse = any(k in reasons_text for k in ("wp-admin", "phpmyadmin", "wp-login", "cpanel"))
     
+    # 9. Domain Age Flags
+    is_young_domain = "newly registered domain" in reasons_text or "young domain" in str(details.get("intelligence_flags", [])).lower()
+    
     # Build tag list
     if is_financial: tags.append("Financial Sector")
     if is_cred_theft: tags.append("Credential Harvesting")
@@ -67,6 +70,7 @@ def determine_category_and_tags(score: int, details: dict, reasons: List[str]) -
     if is_obfuscation: tags.append("Obfuscation Techniques")
     if is_redirect: tags.append("Redirect Tactics")
     if is_admin_abuse: tags.append("Privilege Escalation Target")
+    if is_young_domain: tags.append("Recent Registration")
     
     # Apply category priority order
     if is_financial and (brand_spoof_detected or is_blacklisted or score >= 70):
@@ -85,6 +89,8 @@ def determine_category_and_tags(score: int, details: dict, reasons: List[str]) -
         primary = "Suspicious Redirect"
     elif is_admin_abuse:
         primary = "Admin Panel Abuse"
+    elif is_young_domain and score >= 35:
+        primary = "Newly Registered Domain"
     else:
         primary = "Generic Phishing Attempt"
         
@@ -97,7 +103,8 @@ def determine_category_and_tags(score: int, details: dict, reasons: List[str]) -
         "Account Verification Scam": "Security Alert Theme",
         "URL Obfuscation": "Obfuscation Techniques",
         "Suspicious Redirect": "Redirect Tactics",
-        "Admin Panel Abuse": "Privilege Escalation Target"
+        "Admin Panel Abuse": "Privilege Escalation Target",
+        "Newly Registered Domain": "Recent Registration"
     }
     
     primary_tag = primary_label_map.get(primary)
@@ -108,42 +115,124 @@ def determine_category_and_tags(score: int, details: dict, reasons: List[str]) -
         
     return primary, filtered_tags
 
-def determine_severity(score: int, is_blacklisted: bool = False) -> str:
+def evaluate_final_verdict(score: int, details: dict) -> Tuple[str, str, str, str, int, dict]:
     """
-    Standardised threat severity tiers.
-    Elevates minimum severity for known blacklist matches.
+    Intelligence Escalation Layer & Final Verdict Engine.
+    Enforces absolute rules based on the Verdict Precedence Hierarchy.
+    Returns (final_verdict, confidence, escalation_trigger, escalation_reason, final_score)
     """
-    if is_blacklisted:
-        score = max(score, 85)
+    # 1. Base Verdict and Confidence from Score
+    if score < 35: 
+        final_verdict = "SAFE"
+        confidence = "High" if score < 15 else "Moderate"
+    elif score < 70: 
+        final_verdict = "SUSPICIOUS"
+    elif score < 85: 
+        final_verdict = "HIGH RISK"
+    else: 
+        final_verdict = "CRITICAL"
         
-    if score <= 20:
-        return "Informational"
-    elif score <= 40:
-        return "Low"
-    elif score <= 60:
-        return "Medium"
-    elif score <= 80:
-        return "High"
-    else:
-        return "Critical"
+    escalation_trigger = None
+    escalation_reason = None
+    
+    # Precedence Hierarchy Values
+    verdict_levels = {"SAFE": 0, "SUSPICIOUS": 1, "HIGH RISK": 2, "CRITICAL": 3, "MALICIOUS": 4}
+    
+    def escalate(new_verdict: str, trigger: str, reason: str):
+        nonlocal final_verdict, escalation_trigger, escalation_reason
+        if verdict_levels[new_verdict] > verdict_levels[final_verdict] or (verdict_levels[new_verdict] == verdict_levels[final_verdict] and escalation_trigger is None):
+            final_verdict = new_verdict
+            escalation_trigger = trigger
+            escalation_reason = reason
+            
+    brand_spoof_detected = details.get("brand_spoof_detected", False)
+    suspected_brand = details.get("suspected_brand", "") if brand_spoof_detected else ""
+    is_financial = False
+    if brand_spoof_detected:
+        if suspected_brand.lower() in ("paypal", "chase", "bank of america", "wells fargo", "citibank", "stripe", "coinbase", "binance", "metamask", "americanexpress", "discover"):
+            is_financial = True
+            
+    is_unregistered = details.get("domain_age_days") == -1
+    has_threat_feed = bool(details.get("threat_feeds", {}).get("matched_sources"))
+    is_blacklisted = details.get("is_blacklisted", False)
 
+    # Escalation Rules (Lowest to Highest Precedence)
+    # Rule 1: Brand Spoof -> Min Verdict: SUSPICIOUS
+    if brand_spoof_detected:
+        escalate("SUSPICIOUS", "Brand Spoof Detection", f"Potential {suspected_brand} impersonation detected.")
+        score = max(score, 45)
+        
+    # Rule 3: Brand Spoof + Unregistered Domain -> Min Verdict: HIGH RISK
+    if brand_spoof_detected and is_unregistered:
+        escalate("HIGH RISK", "Brand Spoof Detection & Unregistered Domain", f"Potential {suspected_brand} impersonation hosted on unregistered infrastructure.")
+        score = max(score, 75)
+        
+    # Rule 2: Brand Spoof + Financial Brand -> Min Verdict: HIGH RISK
+    if brand_spoof_detected and is_financial:
+        escalate("HIGH RISK", "Financial Brand Spoof Detection", f"Potential impersonation of financial institution ({suspected_brand}).")
+        score = max(score, 80)
+        
+    # Rule 4: Threat Feed Match -> Min Verdict: CRITICAL
+    if has_threat_feed or is_blacklisted:
+        escalate("CRITICAL", "Threat Intelligence Feed", "Domain matches active indicators of compromise in threat feeds.")
+        score = max(score, 90)
+        
+    # Rule 5: Threat Feed + Spoof -> Final Verdict: MALICIOUS
+    if (has_threat_feed or is_blacklisted) and brand_spoof_detected:
+        escalate("MALICIOUS", "Confirmed Malicious Impersonation", f"Known malicious infrastructure actively spoofing {suspected_brand}.")
+        score = 100
+
+    if has_threat_feed:
+        confidence = "Very High"
+    elif brand_spoof_detected:
+        confidence = "High"
+    elif is_unregistered:
+        confidence = "Medium"
+    elif final_verdict == "SAFE":
+        confidence = "High"
+    else:
+        confidence = "Medium"
+        
+    evidence_snapshot = {
+        "brand_spoof_detected": brand_spoof_detected,
+        "threat_feed_match": has_threat_feed,
+        "domain_age_status": details.get("domain_age_status", "unknown"),
+        "threat_category": details.get("threat_category", "Unknown"),
+        "rule_score": details.get("rule_score", score),
+        "ml_score": details.get("ml_score", 0)
+    }
+
+    return final_verdict, confidence, escalation_trigger, escalation_reason, score, evidence_snapshot
 def determine_consensus(score: int, scan_type: str, details: dict) -> str:
     """
-    Determines consensus classification for comparison scans or standalone scans.
+    Determines consensus classification by evaluating agreement across Intelligence Layers.
+    Does NOT conflate with Confidence.
     """
+    has_threat_feed = bool(details.get("threat_feeds", {}).get("matched_sources"))
+    brand_spoof_detected = details.get("brand_spoof_detected", False)
+    
     if scan_type == "comparison":
+        rule_score = details.get("rule_based_result", {}).get("score", 0)
+        ml_score = details.get("ml_result", {}).get("score", 0)
+        
+        # If rules and ML agree that it's low threat, but intelligence escalates it:
+        if (rule_score < 35 and ml_score < 35) and (has_threat_feed or brand_spoof_detected):
+            return "Divided"
+            
         score_diff = details.get("score_difference", 0)
         if score_diff <= 15:
             return "Strong Consensus"
         elif score_diff <= 30:
-            return "Moderate Confidence"
+            return "Moderate Consensus"
         else:
-            return "Weak Consensus"
+            return "Divided"
     else:
-        if score >= 80 or details.get("is_blacklisted") or details.get("brand_spoof_detected"):
-            return "High Threat Confidence"
-        else:
-            return "Moderate Confidence"
+        # Single engine
+        base_engine_safe = score < 35
+        if base_engine_safe and (has_threat_feed or brand_spoof_detected):
+            return "Divided"
+            
+        return "Strong Consensus"
 
 def generate_educational_insight(category: str, suspected_brand: str = "") -> str:
     """
@@ -152,6 +241,7 @@ def generate_educational_insight(category: str, suspected_brand: str = "") -> st
     brand_str = suspected_brand if suspected_brand else "trusted brands"
     
     insights = {
+        "Safe Domain": "No phishing indicators or suspicious patterns were detected. The domain appears legitimate and structurally sound.",
         "Financial Fraud": f"Attackers frequently target financial services to steal transaction parameters, credit card data, or account details for monetary gain.",
         "Credential Theft": f"Credential harvesting pages create mock login portals designed to steal username and password credentials from unsuspecting visitors.",
         "Brand Spoofing": f"Brand spoofing exploits user trust by registering visually similar typosquatted domains or homoglyph characters mimicking {brand_str}.",
@@ -160,12 +250,13 @@ def generate_educational_insight(category: str, suspected_brand: str = "") -> st
         "URL Obfuscation": f"URL obfuscation uses raw IP addresses, excessive subdomains, or percent encoding to conceal destination links from basic scanners.",
         "Suspicious Redirect": f"Suspicious open redirects bypass verification screens, forwarding users from a seemingly trusted domain directly to an attacker's node.",
         "Admin Panel Abuse": f"Administrator consoles are heavily targeted by automated tools attempting to locate default setups for brute force attacks.",
+        "Newly Registered Domain": f"Newly registered domains are commonly used in phishing campaigns because they have little reputation history and can be discarded quickly after detection.",
         "Generic Phishing Attempt": f"This URL matches behavioral patterns linked to phishing campaigns. Entering private credentials is highly discouraged."
     }
     
     return insights.get(category, "This domain matches common phishing vectors. Practice general cyber hygiene and verify target domains independently.")
 
-def generate_scan_journey(url: str, domain: str, score: int, details: dict) -> List[Dict[str, Any]]:
+def generate_scan_journey(url: str, domain: str, score: int, details: dict, final_verdict: str = None, confidence: str = None, consensus: str = None, escalation_trigger: str = None, escalation_reason: str = None, recommendation: str = None) -> List[Dict[str, Any]]:
     """
     Generates progressive analyst-style checklist tracking threat engine steps.
     """
@@ -204,6 +295,22 @@ def generate_scan_journey(url: str, domain: str, score: int, details: dict) -> L
             "message": "Domain not found in static threat intel blacklists."
         })
         
+    # 2.5 Threat Feed Check
+    threat_feeds = details.get("threat_feeds", {})
+    if threat_feeds and threat_feeds.get("matched_sources"):
+        sources = ", ".join(threat_feeds["matched_sources"])
+        journey.append({
+            "stage": "Dynamic Threat Feed Check",
+            "status": "critical",
+            "message": f"Active threat detected by intelligence feeds: {sources} (Confidence: {threat_feeds.get('confidence', 'High')})"
+        })
+    else:
+        journey.append({
+            "stage": "Dynamic Threat Feed Check",
+            "status": "passed",
+            "message": "Domain not present in dynamic phishing or malware feeds."
+        })
+        
     # 3. Brand Spoof Check
     brand_spoof_detected = details.get("brand_spoof_detected", False)
     suspected_brand = details.get("suspected_brand", "")
@@ -219,6 +326,40 @@ def generate_scan_journey(url: str, domain: str, score: int, details: dict) -> L
             "stage": "Brand Spoof Check",
             "status": "passed",
             "message": "No brand impersonation or typosquatting signatures matched."
+        })
+        
+    # 3.5 Domain Age Intelligence Check
+    domain_age_days = details.get("domain_age_days")
+    if domain_age_days is not None:
+        if domain_age_days == -1:
+            journey.append({
+                "stage": "Domain Age Check",
+                "status": "warning",
+                "message": "Unregistered Domain Detected. Potential phishing infrastructure indicator."
+            })
+        elif domain_age_days <= 30:
+            journey.append({
+                "stage": "Domain Age Check",
+                "status": "triggered",
+                "message": f"Domain registered very recently ({domain_age_days} days ago)."
+            })
+        elif domain_age_days <= 90:
+            journey.append({
+                "stage": "Domain Age Check",
+                "status": "warning",
+                "message": f"Domain registration is relatively new ({domain_age_days} days old)."
+            })
+        else:
+            journey.append({
+                "stage": "Domain Age Check",
+                "status": "passed",
+                "message": f"Domain has established registration history ({domain_age_days} days old)."
+            })
+    else:
+        journey.append({
+            "stage": "Domain Age Check",
+            "status": "informational",
+            "message": "Unable to determine registration age (Lookup fallback)."
         })
         
     # 4. Rules Engine Heuristics
@@ -265,12 +406,28 @@ def generate_scan_journey(url: str, domain: str, score: int, details: dict) -> L
             "message": "Machine learning check bypassed (Rules scan mode)."
         })
         
-    # 6. Final Assessment
-    sev = determine_severity(score, is_blacklisted)
-    journey.append({
-        "stage": "Final Assessment",
-        "status": "critical" if score >= 80 else ("warning" if score >= 35 else "passed"),
-        "message": f"Aggregated threat scan completed. Assigned severity: {sev} (score {score}/100)."
-    })
+    # Final Assessment is only appended if final_verdict is passed (from API route)
+    if final_verdict:
+        reason_text = escalation_reason if escalation_reason else ("No specific threat intelligence triggers detected." if final_verdict == "SAFE" else "Score threshold exceeded based on heuristics/ML patterns.")
+        
+        assessment_msg = f"Final Verdict:\n{final_verdict}\n\nReason:\n{reason_text}"
+        if escalation_trigger:
+            assessment_msg += f"\n\nEscalation Trigger:\n{escalation_trigger}"
+        
+        assessment_msg += f"\n\nConfidence:\n{confidence}\n\nConsensus:\n{consensus}\n\nRecommended Action:\n{recommendation}"
+        
+        status_mapping = {
+            "SAFE": "passed",
+            "SUSPICIOUS": "warning",
+            "HIGH RISK": "critical",
+            "CRITICAL": "critical",
+            "MALICIOUS": "critical"
+        }
+    
+        journey.append({
+            "stage": "Final Assessment",
+            "status": status_mapping.get(final_verdict, "informational"),
+            "message": assessment_msg
+        })
     
     return journey

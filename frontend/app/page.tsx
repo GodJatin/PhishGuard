@@ -265,7 +265,7 @@ export default function Home() {
                 Comparison Intelligence
               </h2>
               <p className="text-sm text-neutral-400 leading-relaxed font-mono">
-                Security shouldn't be a black box. PhishGuard pits deterministic logic against adaptive statistics side-by-side. 
+                Security shouldn&apos;t be a black box. PhishGuard pits deterministic logic against adaptive statistics side-by-side. 
               </p>
               <ul className="space-y-3 text-xs font-mono text-neutral-300">
                 <li className="flex items-start gap-2">
@@ -385,7 +385,7 @@ export default function Home() {
                   <span className="text-cyan-400 font-semibold flex items-center gap-1">Copy <Layers className="w-3 h-3" /></span>
                 </div>
               </div>
-              <p className="text-[10px] text-neutral-500 text-left font-mono">Downloads are signed with PhishGuard's cryptographic threat stamp.</p>
+              <p className="text-[10px] text-neutral-500 text-left font-mono">Downloads are signed with PhishGuard&apos;s cryptographic threat stamp.</p>
             </div>
           </div>
         </section>

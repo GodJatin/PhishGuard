@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { 
   History as HistoryIcon, Loader2, ShieldCheck, AlertTriangle, 
-  ShieldAlert, ChevronRight, RefreshCw, Trash2, Shield 
+  ShieldAlert, ChevronRight, RefreshCw, Trash2, Shield, QrCode
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import DashboardLayout from '../dashboard/layout';
@@ -140,7 +140,7 @@ export default function HistoryPage() {
         
         // Invalidate cache to sync state with database
         queryClient.invalidateQueries({ queryKey: ['history'] });
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Failed to delete scan report:", err);
         // Restore row in UI if Supabase query fails
         setDeletedScanIds(prev => prev.filter(x => x !== id));
@@ -169,7 +169,7 @@ export default function HistoryPage() {
 
       queryClient.invalidateQueries({ queryKey: ['history'] });
       toast.success("All threat scan logs deleted successfully", { id: toastId });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to clear database logs:", err);
       toast.error("Clear transaction failed. Please try again.", { id: toastId });
     }
@@ -268,6 +268,14 @@ export default function HistoryPage() {
                               <span>{new Date(scan.created_at).toLocaleString()}</span>
                               <span className="w-1 h-1 rounded-full bg-white/20"></span>
                               <span>Score: {scan.score}/100</span>
+                              {scan.scan_source === 'qr' && (
+                                <>
+                                  <span className="w-1 h-1 rounded-full bg-white/20"></span>
+                                  <span className="flex items-center gap-1 text-emerald-400">
+                                    <QrCode className="w-3 h-3" /> QR
+                                  </span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>

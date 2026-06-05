@@ -3,7 +3,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.v1.routes import health, scan, history, auth, reports, analytics
+from app.api.v1.routes import health, scan, history, auth, reports, analytics, qr
+import threading
+from app.services.intelligence_engine.threat_feeds.feed_engine import sync_feeds
 
 # ── Structured logging setup ─────────────────────────────────────────────────
 logging.basicConfig(
@@ -23,6 +25,12 @@ app = FastAPI(
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=None,
 )
+
+@app.on_event("startup")
+def startup_event():
+    logger.info("Initializing background tasks on startup...")
+    # Trigger feed synchronization asynchronously to prevent blocking startup
+    threading.Thread(target=sync_feeds, daemon=True).start()
 
 # ── Global unhandled exception handler ───────────────────────────────────────
 @app.exception_handler(Exception)
@@ -58,6 +66,7 @@ app.include_router(scan.router, prefix=f"{settings.API_V1_STR}/scan", tags=["sca
 app.include_router(history.router, prefix=f"{settings.API_V1_STR}/history", tags=["history"])
 app.include_router(reports.router, prefix=f"{settings.API_V1_STR}/reports", tags=["reports"])
 app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"])
+app.include_router(qr.router, prefix=f"{settings.API_V1_STR}/qr", tags=["qr"])
 
 @app.get("/")
 def health_root():

@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 from app.services.analytics_engine.insights import calculate_insights
-from app.services.intelligence_engine.classifier import determine_category_and_tags, determine_severity
+from app.services.intelligence_engine.classifier import determine_category_and_tags
 
 def calculate_overview(scans: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -16,6 +16,8 @@ def calculate_overview(scans: List[Dict[str, Any]]) -> Dict[str, Any]:
             "dangerous_count": 0,
             "ml_scan_count": 0,
             "rule_based_count": 0,
+            "manual_scan_count": 0,
+            "qr_scan_count": 0,
             "average_threat_score": 0.0,
             "highest_threat_score": 0,
             "latest_scan_timestamp": None,
@@ -24,11 +26,11 @@ def calculate_overview(scans: List[Dict[str, Any]]) -> Dict[str, Any]:
             "threat_category_counts": {},
             "spoofed_brand_counts": {},
             "severity_tier_counts": {
-                "Informational": 0,
-                "Low": 0,
-                "Medium": 0,
-                "High": 0,
-                "Critical": 0
+                "SAFE": 0,
+                "SUSPICIOUS": 0,
+                "HIGH RISK": 0,
+                "CRITICAL": 0,
+                "MALICIOUS": 0
             },
             "insights": calculate_insights(scans)
         }
@@ -38,6 +40,8 @@ def calculate_overview(scans: List[Dict[str, Any]]) -> Dict[str, Any]:
     dangerous_count = 0
     ml_scan_count = 0
     rule_based_count = 0
+    manual_scan_count = 0
+    qr_scan_count = 0
     total_score = 0
     highest_threat_score = 0
     latest_scan_timestamp = None
@@ -45,20 +49,20 @@ def calculate_overview(scans: List[Dict[str, Any]]) -> Dict[str, Any]:
     threat_category_counts = {}
     spoofed_brand_counts = {}
     severity_tier_counts = {
-        "Informational": 0,
-        "Low": 0,
-        "Medium": 0,
-        "High": 0,
-        "Critical": 0
+        "SAFE": 0,
+        "SUSPICIOUS": 0,
+        "HIGH RISK": 0,
+        "CRITICAL": 0,
+        "MALICIOUS": 0
     }
     
     for scan in scans:
-        status = (scan.get("status") or "").lower().strip()
-        if status == "safe":
+        status = (scan.get("status") or "").upper().strip()
+        if status == "SAFE":
             safe_count += 1
-        elif status == "suspicious":
+        elif status == "SUSPICIOUS":
             suspicious_count += 1
-        elif status == "dangerous":
+        elif status in ("HIGH RISK", "CRITICAL", "MALICIOUS", "DANGEROUS"):
             dangerous_count += 1
             
         scan_type = scan.get("scan_type") or "rule-based"
@@ -71,6 +75,12 @@ def calculate_overview(scans: List[Dict[str, Any]]) -> Dict[str, Any]:
         total_score += score
         if score > highest_threat_score:
             highest_threat_score = score
+            
+        scan_source = scan.get("scan_source") or "manual"
+        if scan_source == "qr":
+            qr_scan_count += 1
+        else:
+            manual_scan_count += 1
             
         created_at = scan.get("created_at")
         if created_at:
@@ -85,17 +95,18 @@ def calculate_overview(scans: List[Dict[str, Any]]) -> Dict[str, Any]:
         reasons = scan.get("reasons") or []
         is_blacklisted = tech.get("is_blacklisted", False)
         
-        # 1. Severity tier
-        sev = tech.get("severity_tier")
-        if not sev:
-            sev = determine_severity(score, is_blacklisted)
+        # 1. Severity tier / Final Verdict
+        metadata = scan.get("scan_metadata") or {}
+        sev = metadata.get("final_verdict") or tech.get("severity_tier") or status
+        
+        # Legacy mapping if old severity is found
+        legacy_map = {"Informational": "SAFE", "Low": "SUSPICIOUS", "Medium": "HIGH RISK", "High": "CRITICAL", "Critical": "MALICIOUS"}
+        if sev in legacy_map:
+            sev = legacy_map[sev]
+            
+        sev = sev.upper()
         if sev in severity_tier_counts:
             severity_tier_counts[sev] += 1
-        else:
-            # fallback if casing mismatch
-            capitalised_sev = sev.capitalize()
-            if capitalised_sev in severity_tier_counts:
-                severity_tier_counts[capitalised_sev] += 1
                 
         # 2. Threat Category
         cat = tech.get("threat_category")
@@ -122,6 +133,8 @@ def calculate_overview(scans: List[Dict[str, Any]]) -> Dict[str, Any]:
         "dangerous_count": dangerous_count,
         "ml_scan_count": ml_scan_count,
         "rule_based_count": rule_based_count,
+        "manual_scan_count": manual_scan_count,
+        "qr_scan_count": qr_scan_count,
         "average_threat_score": average_threat_score,
         "highest_threat_score": highest_threat_score,
         "latest_scan_timestamp": latest_scan_timestamp,

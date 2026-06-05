@@ -19,9 +19,12 @@ export default function GlobalOfflineBanner() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    // Initialise from the browser's current status
-    setIsOnline(navigator.onLine);
+    // Use queueMicrotask to avoid synchronous setState calls in the effect body,
+    // which can cause cascading re-renders (react-hooks/set-state-in-effect).
+    queueMicrotask(() => {
+      setMounted(true);
+      setIsOnline(navigator.onLine);
+    });
 
     const handleOffline = () => {
       setIsOnline(false);
