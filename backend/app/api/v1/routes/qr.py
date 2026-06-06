@@ -3,7 +3,7 @@ import re
 import logging
 from fastapi import APIRouter, File, UploadFile, HTTPException
 from PIL import Image, UnidentifiedImageError
-from pyzbar.pyzbar import decode
+import zxingcpp
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +22,12 @@ async def decode_qr(file: UploadFile = File(...)):
         except UnidentifiedImageError:
             raise HTTPException(status_code=400, detail="Invalid image file format.")
             
-        decoded_objects = decode(img)
+        decoded_objects = zxingcpp.read_barcodes(img)
         
         if not decoded_objects:
             raise HTTPException(status_code=400, detail="No QR code detected in the image.")
             
-        qr_data = decoded_objects[0].data.decode('utf-8').strip()
+        qr_data = decoded_objects[0].text.strip()
         
         # Extremely basic validation: if it doesn't look like a URL, maybe it's text
         # But for PhishGuard we specifically want URLs.

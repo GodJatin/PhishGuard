@@ -10,7 +10,7 @@ sqlalchemy
 psycopg2-binary
 reportlab
 scikit-learn
-pyzbar
+zxing-cpp
 Pillow
 python-multipart
 python-whois
