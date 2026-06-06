@@ -281,29 +281,38 @@ PhishGuard can be used for:
 
 ## 🚦 Threat Intelligence Pipeline
 
-Input URL
-↓
-Whitelist Check
-↓
-Blacklist Check
-↓
-Threat Feed Intelligence
-↓
-Brand Spoof Detection
-↓
-Domain Intelligence
-↓
-Rule Engine
-↓
-ML Engine
-↓
-Consensus Analysis
-↓
-Decision Engine
-↓
-Threat Classification
-↓
-Analyst Report Generation
+```mermaid
+flowchart TD
+
+A[Input URL]
+--> B[Whitelist Check]
+
+B --> C[Blacklist Check]
+
+C --> D[Threat Feed Intelligence
+OpenPhish • PhishTank • URLHaus]
+
+D --> E[Brand Spoof Detection
+Homoglyph • Levenshtein • Trademark Analysis]
+
+E --> F[Domain Intelligence
+RDAP • WHOIS • Domain Age]
+
+F --> G[Rule Engine]
+
+G --> H[Machine Learning Engine
+RandomForest Classifier]
+
+H --> I[Consensus Analysis]
+
+I --> J[Decision Engine]
+
+J --> K[Threat Classification]
+
+K --> L[Analyst Report Generation]
+```
+
+PhishGuard follows a layered intelligence workflow where every URL passes through multiple independent security engines. Results from threat intelligence feeds, brand spoof analysis, domain intelligence, heuristic rules, and machine learning are aggregated through the Decision Engine to generate an explainable final verdict and analyst-grade threat report.
 
 ---
 
