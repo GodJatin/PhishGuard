@@ -2,7 +2,7 @@
   <h1>🛡️ PhishGuard</h1>
   <p><strong>Layered Phishing Detection & Explainable Threat Intelligence System</strong></p>
   
-  [![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+  [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org/)
   [![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
   [![Supabase](https://img.shields.io/badge/Supabase-DB-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com/)
   [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
@@ -24,57 +24,343 @@ Designed with a focus on modern SOC (Security Operations Center) workflows, it o
 
 ---
 
+## 📈 Project Statistics
+
+* **500,000+** Training Samples
+* **RandomForest** Machine Learning Model
+* **10+** Extracted URL Features
+* **3** Threat Intelligence Sources
+* **5** Verdict Levels
+* **9** Threat Categories
+* **3** Export Formats
+* **QR Code** Scanning Support
+* **Progressive Web App** (PWA)
+* **Analyst-Grade** Reporting System
+
+---
+
+## ⚠️ Threat Classification
+
+PhishGuard dynamically classifies threats into the following hierarchical categories based on intelligence findings, rule triggers, spoof analysis, and threat indicators:
+
+* **Financial Fraud**: Potential impersonation of financial institutions (e.g., PayPal, Chase).
+* **Credential Theft**: Mock login portals designed to steal username and password credentials.
+* **Brand Spoofing**: Typosquatted domains or homoglyph characters mimicking trusted brands.
+* **Malware Delivery**: Structures linked to malware payloads (e.g., `.exe`, `.apk`, suspicious shells).
+* **Account Verification Scam**: Fake security warnings urging immediate action to confirm credentials.
+* **URL Obfuscation**: Use of raw IP addresses, excessive subdomains, or percent encoding.
+* **Suspicious Redirect**: Open redirects bypassing verification screens to forward users.
+* **Admin Panel Abuse**: Targeting of administrator consoles (e.g., `wp-admin`, `cpanel`).
+* **Newly Registered Domain**: Infrastructure registered very recently with little reputation history.
+* **Generic Phishing Attempt**: General behavioral patterns linked to phishing campaigns.
+
+---
+
 ## ✨ Key Features
 
+### Authentication & Access
+* User Registration
+* Login
+* Logout
+* Protected Routes
+* Session Persistence
+* Guest Mode
+
+### Detection Engines
+* Rule-Based Detection Engine
+* RandomForest Machine Learning Engine
+* Comparison Engine
+* Consensus Analysis
+* Decision Engine
+
 ### Threat Intelligence
-- **Blacklist Intelligence**: Real-time cross-referencing against known malicious domains.
-- **Whitelist Intelligence**: Bypass logic for verified safe domains (e.g., Google, Microsoft).
-- **Spoof Detection**: Advanced typo-squatting and homoglyph detection algorithms.
-- **Threat Scoring**: Mathematical probability calculation based on indicator severity.
-- **Severity Analysis**: Categorization into distinct risk tiers (Critical, High, Medium, Low).
+* Whitelist Intelligence
+* Blacklist Intelligence
+* OpenPhish Integration
+* PhishTank Integration
+* URLHaus Integration
+* Threat Feed Cache
+* Threat Feed Synchronization
 
-### ML & Analytics
-- **ML Detection**: Random Forest classification using passive DNS, WHOIS, and lexical features.
-- **Explainable AI**: Transparent indicator breakdown explaining exactly *why* a URL was flagged.
-- **Comparison Intelligence**: Side-by-side analysis of a target URL against its purported legitimate counterpart.
-- **Analytics Dashboard**: Operational telemetry, recent scans, and timeline histories.
-- **Consensus Scoring**: Final unified verdict blending ML outputs and heuristic intelligence.
+### Brand Protection
+* Brand Spoof Detection
+* Homoglyph Detection
+* Keyword Imitation Detection
+* Trademark Similarity Analysis
 
-### Platform Features
-- **PWA Support**: Installable on desktop and mobile with native offline handling and safe-area padding.
-- **Guest Mode**: Try the platform with temporary session history.
-- **Export Engine**: Export compliance-ready reports in PDF, JSON, and TXT formats.
-- **Mobile Responsiveness**: Fully responsive dashboard with tactile micro-interactions.
+### Domain Intelligence
+* RDAP Lookup
+* WHOIS Fallback
+* Domain Age Analysis
+* Domain Risk Signals
+
+### User Features
+* QR Code URL Scanner
+* Manual URL Scanner
+* Scan History
+* Threat Timeline
+* Analytics Dashboard
+* Guest History
+* PWA Support
+
+### Reporting & Exports
+* PDF Reports
+* JSON Reports
+* TXT Reports
+* Executive Summary
+* Investigation Timeline
+* Supporting Evidence
+* Decision Snapshot
+* Executive Conclusion
+
+---
+
+## 🚦 Threat Intelligence Sources
+
+PhishGuard integrates dynamic, cross-referenced threat intelligence datasets stored locally for rapid lookups:
+
+### OpenPhish
+Community-driven phishing intelligence feed.
+
+### PhishTank
+Verified phishing URL repository.
+
+### URLHaus
+Malware and malicious infrastructure intelligence feed.
+
+*These feeds are synchronized and cached locally in Supabase to provide zero-latency lookups during the scanning process.*
+
+---
+
+## 🧠 Machine Learning Engine
+
+**Current Model:**
+RandomForestClassifier
+
+**Framework:**
+scikit-learn
+
+**Detection Features:**
+* URL Length
+* HTTPS Usage
+* Digit Count
+* Hyphen Count
+* Suspicious Keywords
+* Subdomain Count
+* Redirect Indicators
+* IP Address Usage
+* Encoded Characters
+* TLD Indicators
+
+**Explainability:**
+* Feature Importance Analysis
+* Confidence Scoring
+
+### Training Dataset
+
+**Dataset Name:**
+Phishing URLs Dataset
+
+**Dataset Source:**
+Hugging Face (`ealvaradob/phishing-dataset`)
+
+**Number of Samples:**
+500,000+
+
+**Feature Count:**
+10+
+
+**Training Approach:**
+Offline supervised learning using extracted lexical features, trained and serialized for rapid API inference.
+
+### Current Limitations
+* RandomForest is currently the production model.
+* Model focuses primarily on lexical URL analysis.
+* Does not yet include ASN (Autonomous System Number) intelligence.
+* Does not yet include extended domain reputation intelligence.
+
+---
+
+## ⚖️ Decision Engine
+
+PhishGuard does not rely on a single numerical score. The final verdict is generated by combining insights from:
+
+* Threat Intelligence Feeds
+* Brand Spoof Detection
+* Domain Intelligence
+* Rule-Based Engine
+* Machine Learning Engine
+* Consensus Analysis
+
+### Escalation Logic
+The Decision Engine enforces absolute rules based on a strict Verdict Precedence Hierarchy that overrides standard numerical thresholds:
+
+* **Brand Spoof Detection** → Escalates minimum verdict to **SUSPICIOUS**.
+* **Brand Spoof + Unregistered Domain** → Escalates minimum verdict to **HIGH RISK**.
+* **Financial Brand Spoof** → Escalates minimum verdict to **HIGH RISK**.
+* **Threat Feed Match or Blacklisted** → Escalates minimum verdict to **CRITICAL**.
+* **Threat Feed + Brand Spoof** → Escalates final verdict to **MALICIOUS** (Highest Precedence).
+
+---
+
+## 🛡️ Verdict Levels
+
+Verdicts are produced through Decision Engine escalation and not only numerical scores.
+
+* **SAFE**
+  No significant phishing indicators detected. The domain appears legitimate and structurally sound.
+
+* **SUSPICIOUS**
+  Minor indicators or a brand spoof detection with low severity detected. Exercise caution.
+
+* **HIGH RISK**
+  Strong phishing indicators detected (e.g., Financial Brand Spoofing or Unregistered Domains). Avoid entering credentials.
+
+* **CRITICAL**
+  Multiple intelligence layers indicate malicious behavior, including active threat feed matches.
+
+* **MALICIOUS**
+  Known malicious infrastructure actively spoofing a trusted brand. Severe multi-layer evidence confirmed.
+
+---
+
+## 🔢 Threat Scoring Methodology
+
+While the Decision Engine can escalate verdicts beyond numerical boundaries, the baseline severity ranges are evaluated out of 100:
+
+* **0 – 34**
+  Safe / Informational
+* **35 – 69**
+  Suspicious / Low to Medium Risk
+* **70 – 84**
+  Dangerous / High Risk
+* **85 – 100**
+  Critical / Malicious
+
+### Contributing Factors:
+* Rule Engine heuristics
+* Threat Feed Matches (+50 to +60 points per feed)
+* Brand Spoof Detection (+25 points)
+* Domain Age Signals (+35 points for unregistered active domains)
+* Blacklist Indicators
+* URL Obfuscation
+
+*Note: Severity scores and the final verdict are intrinsically related, but the Decision Engine's escalation rules guarantee that confirmed threats receive maximum severity regardless of the raw mathematical score.*
+
+---
+
+## 📊 Analytics Dashboard
+
+* Total Scans
+* Safe URLs
+* Suspicious URLs
+* Dangerous URLs
+* ML Scans
+* Rule-Based Scans
+* Average Threat Score
+* Threat Distribution
+* Timeline Activity
+* Engine Usage
+
+These metrics are generated dynamically by aggregating user scan history and global platform telemetry stored in the Supabase PostgreSQL database, presenting operational insights through an interactive Recharts interface.
+
+---
+
+## 🎯 Applications
+
+PhishGuard can be used for:
+
+- Cybersecurity Education
+- Threat Intelligence Demonstrations
+- Research Paper Prototypes
+- Security Awareness Training
+- URL Risk Assessment
+- Phishing Detection Research
 
 ---
 
 ## 🚦 Threat Intelligence Pipeline
 
-PhishGuard analyzes URLs through a deterministic, multi-layered pipeline:
-
-```mermaid
-graph TD
-    A[Input URL] --> B{Whitelist Check}
-    B -- Safe --> C[Return Safe Verdict]
-    B -- Unknown --> D{Blacklist Check}
-    D -- Known Malicious --> E[Return Critical Threat]
-    D -- Clean --> F[Spoof & Typo Detection]
-    F --> G[Lexical Rule Engine]
-    G --> H[ML Classifier Engine]
-    H --> I[Consensus Analysis]
-    I --> J[Final Threat Assessment & Report]
-```
-
-*(Alternatively, in text representation:)*
-`Whitelist` → `Blacklist` → `Spoof Detection` → `Rule Engine` → `ML Engine` → `Consensus Analysis` → `Final Assessment`
+Input URL
+↓
+Whitelist Check
+↓
+Blacklist Check
+↓
+Threat Feed Intelligence
+↓
+Brand Spoof Detection
+↓
+Domain Intelligence
+↓
+Rule Engine
+↓
+ML Engine
+↓
+Consensus Analysis
+↓
+Decision Engine
+↓
+Threat Classification
+↓
+Analyst Report Generation
 
 ---
 
 ## 🏛️ System Architecture
 
-- **Frontend (Next.js 15, App Router, React 19)**: A highly interactive, dark-mode-first React application using Tailwind CSS and Framer Motion for cinematic visual storytelling and SOC aesthetics.
-- **Backend (FastAPI, Python 3.11)**: A high-performance asynchronous REST API that orchestrates the threat intelligence engines, machine learning model inference (`scikit-learn`), and report generation (`ReportLab`).
-- **Database (Supabase / PostgreSQL)**: Provides robust authentication, Row-Level Security (RLS), and persistent storage for user scan histories and platform analytics.
+- **Frontend Layer**: A highly interactive Next.js 16 (React) application utilizing Tailwind CSS and Framer Motion for SOC-grade cinematic visuals. Manages state via Zustand and React Query.
+- **Backend Layer**: A high-performance asynchronous REST API powered by FastAPI (Python 3.11). Orchestrates core application logic and route handling.
+- **Database Layer**: Supabase PostgreSQL handling authentication, Row-Level Security (RLS), and persistent storage for scan history.
+- **Threat Intelligence Layer**: Interrogates external feeds (OpenPhish, PhishTank, URLHaus) and performs real-time WHOIS/RDAP lookups.
+- **Detection Engine Layer**: Brand Spoof detection (Homoglyph, Levenshtein), Lexical Rule Engine.
+- **ML Engine Layer**: scikit-learn driven inference evaluating extracted URL vectors.
+- **Decision Engine Layer**: Evaluates outputs from all upstream intelligence layers to calculate a unified consensus score and verdict.
+- **Reporting & Export Layer**: Generates strictly formatted forensic JSON, TXT, and PDF documents (via ReportLab).
+
+### System Architecture Diagram
+
+```mermaid
+graph TD
+    User([User]) --> Frontend[Next.js Frontend]
+    Frontend --> Backend[FastAPI Backend]
+    
+    subgraph Core Services
+        Backend --> Intel[Threat Intelligence]
+        Intel --> Cache[Threat Feed Cache]
+        Backend --> Domain[Domain Intelligence]
+        Backend --> Spoof[Brand Spoof]
+        Backend --> Rule[Rule Engine]
+        Backend --> ML[ML Engine]
+        Backend --> Decision[Decision Engine]
+        Backend --> Analytics[Analytics Engine]
+        Backend --> Reporting[Reporting Engine]
+        Reporting --> Export[Export Engine]
+    end
+    
+    Decision --> DB[(Supabase Database)]
+    Backend --> DB
+```
+
+---
+
+## 🔄 Data Flow
+
+```mermaid
+graph TD
+    A([User]) -->|URL Submission| B[Next.js Frontend]
+    B -->|API Request| C[Backend Validation]
+    C --> D[Threat Intelligence Checks]
+    D --> E[Brand Spoof Detection]
+    E --> F[Domain Intelligence]
+    F --> G[Rule Engine]
+    G --> H[ML Engine]
+    H --> I[Consensus Analysis]
+    I --> J[Decision Engine]
+    J --> K[(Storage / Supabase)]
+    J --> L[Report Generation]
+    L --> M[Dashboard / History View]
+```
 
 ---
 
@@ -96,10 +382,30 @@ graph TD
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: Next.js, React, Tailwind CSS, Framer Motion, Zustand, React Query, Recharts, Shadcn UI
-- **Backend**: FastAPI, Uvicorn, Python, scikit-learn, ReportLab, Pydantic
-- **Auth & DB**: Supabase, PostgreSQL
-- **Deployment**: Vercel (Frontend), Render/Railway (Backend)
+**Frontend**
+* Next.js 16
+* TypeScript
+* Tailwind CSS
+* ShadCN UI
+* Framer Motion
+* Zustand
+* React Query
+* Axios
+
+**Backend**
+* FastAPI
+* Python
+* Pydantic
+* scikit-learn
+* ReportLab
+
+**Database**
+* Supabase Auth
+* PostgreSQL
+
+**Deployment**
+* Vercel
+* Render
 
 ---
 
@@ -186,39 +492,45 @@ Scan results can be instantly exported for forensic auditing or compliance filin
 
 ---
 
-## 🔭 Future Roadmap
+## 📍 Current Project Status
 
-Current Status:
+**Current Level:**
 Advanced Cybersecurity SaaS Prototype
 
-Completed:
-
+**Completed:**
 * QR Scanner
 * Threat Intelligence Feeds
 * Domain Intelligence
 * Decision Engine
 * Analyst Reporting
+* Threat Classification
+* Brand Spoof Intelligence
 
-Planned:
-
-* Custom Ensemble Intelligence Model
-* ASN / Hosting Intelligence
-
-Future Scope:
-
-* Browser Extension
+**Production Components:**
+* Frontend
+* Backend
+* Database
+* Intelligence Layers
+* Reporting System
 
 ---
 
-## 🧪 Code Quality
+## 🔭 Future Roadmap
 
-| Metric | Status |
-|--------|--------|
-| TypeScript Errors | 0 |
-| ESLint Errors | 0 |
-| ESLint Warnings | 27 (all warnings only, no errors) |
-| Build Status | ✅ Passes |
-| Test Coverage | Manual integration tested |
+### High Priority
+* **Custom Ensemble Intelligence Model**
+  * Components: RandomForest, GradientBoosting, LogisticRegression, Weighted Voting
+  * Purpose: Increase detection robustness and reduce false positives.
+
+### Medium Priority
+* ASN / Hosting Intelligence
+* Domain Reputation Intelligence
+
+### Future Scope
+* Browser Extension
+* Enterprise Threat Intelligence Expansion
+* Advanced Threat Hunting Dashboard
+* Real-Time Threat Intelligence Expansion
 
 ---
 
