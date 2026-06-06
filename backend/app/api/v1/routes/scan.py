@@ -349,7 +349,12 @@ def scan_url_ml(request: ScanRequest, authorization: Optional[str] = Header(None
 
     # 6. Save to Database
     if user_id:
-        db_status = final_verdict
+        db_status = "safe"
+        if final_verdict.upper() == "SUSPICIOUS":
+            db_status = "suspicious"
+        elif final_verdict.upper() in ["HIGH RISK", "CRITICAL", "DANGEROUS"]:
+            db_status = "dangerous"
+            
         db_tech_details = details.model_dump()
         db_tech_details["confidence"] = confidence  # Store numerical confidence inside JSON
         
@@ -697,7 +702,12 @@ def scan_url_comparison(request: ScanRequest, authorization: Optional[str] = Hea
 
     # 6. Save to Database
     if user_id:
-        db_status = final_verdict
+        db_status = "safe"
+        if final_verdict.upper() == "SUSPICIOUS":
+            db_status = "suspicious"
+        elif final_verdict.upper() in ["HIGH RISK", "CRITICAL", "DANGEROUS"]:
+            db_status = "dangerous"
+            
         db_tech_details = details.model_dump()
         db_tech_details["confidence"] = ml_confidence  # Store numerical confidence
         
