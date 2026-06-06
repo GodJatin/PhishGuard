@@ -109,7 +109,7 @@ def analyze_url(url: str) -> ScanResponse:
         "scoring_breakdown": scoring_breakdown
     }
     threat_category, secondary_tags = classifier.determine_category_and_tags(score, temp_details, reasons)
-    final_verdict, conf_str, esc_trigger, esc_reason, score = classifier.evaluate_final_verdict(score, temp_details)
+    final_verdict, conf_str, esc_trigger, esc_reason, score, evidence_snapshot = classifier.evaluate_final_verdict(score, temp_details)
     
     # Update consensus with potentially modified score
     consensus_level = classifier.determine_consensus(score, "rules", temp_details)
@@ -199,6 +199,7 @@ def analyze_url(url: str) -> ScanResponse:
                 "escalation_trigger": esc_trigger,
                 "root_cause": esc_reason
             },
+            "evidence_snapshot": evidence_snapshot,
             "supporting_evidence": evidence,
             "domain_intelligence": domain_age_data,
             "threat_feeds": threat_feeds_data
